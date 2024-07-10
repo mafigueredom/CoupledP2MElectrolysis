@@ -1,0 +1,1740 @@
+Version "40.0-0";
+Libraries "Modeler.acml", "SystemLibrary.acml";
+Model SOEC_alg
+
+// Components***************************************************************************************************************************************************************
+
+Components as StringSet (["H2O","H2","O2","N2","CO2","CH4"]);
+
+// Ports*******************************************************************************************************************************************************************
+
+FlowIn    as input    MoleFractionPort   (Description:"Electrolyzer feed stream (kmol/h)");
+Cathode   as output   MoleFractionPort   (Description:"Chatode output (kmol/h)");
+Anode     as output   MoleFractionPort   (Description:"Anode output (kmol/h)");
+Qout      as output   HeatPort           (Description:"Heat flow out (GJ/hr)");
+Win       as input    WorkPort           (Description:"Power in (kW)");
+
+// Parameters**************************************************************************************************************************************************************
+
+PI       as Realparameter    (description:"Number Pi (-)",                                             value:3.14159);
+FC       as RealParameter    (description:"Faraday Constant (C/mol)",                                   value:96485);
+ne       as IntegerParameter (description:"Transfered electrons per mol",                                   value:2);
+R        as RealParameter    (description:"Gas universal constant (J/K mol)",                        value:8.314472);
+k_B      as RealParameter    (description:"Boltzmann constant (J/K)",                            value:1.380649e-23);
+dG       as RealParameter    (description:"Gibbs Energy (J/mol)",                                      value:228588);
+
+/*
+//Old
+b_LSM    as RealParameter    (description:"LSM y-intercept (S/cm)",                                    value:12.527);
+m_LSM    as RealParameter    (description:"LSM slope (S/cmK)",                                      value:-1.14e-07);
+*/
+b_YSZ    as RealParameter    (description:"YSZ y-intercept (S/cm)",                                    value:1.2799);
+m_YSZ    as RealParameter    (description:"YSZ slope (S/cmK)",                                      value:-1.30e-06);
+
+
+
+//new
+b_LSM    as RealParameter    (description:"LSM y-intercept (S/cm)",                                    value:5.4595);
+m_LSM    as RealParameter    (description:"LSM slope (S/cmK)",                                      value:-1.1938e3);
+//b_YSZ    as RealParameter    (description:"YSZ y-intercept (S/cm)",                                    value:-5.59);
+//m_YSZ    as RealParameter    (description:"YSZ slope (S/cmK)",                                      value:-1.36e4);
+
+b_NiYSZ  as RealParameter    (description:"Ni-YSZ y-intercept (S/cm)",                                 value:262.33);
+m_NiYSZ  as RealParameter    (description:"Ni-YSZ slope (S/cm°C)",                                    value:-0.1367);
+
+N_cells  as notype           (description:"Cells number (-)",                              value:40.0,   spec:Fixed);
+A_cells  as area             (description:"Cells area (m2)",                             value:0.0389,   spec:Fixed);
+i        as notype           (description:"Current (A)",                                value: 1.247,   spec:Fixed);
+th_cat   as length           (description:"Cathode thickness (m)",                    value:312.5e-06,   spec:Fixed); // principal
+th_an    as length           (description:"Anode thickness (m)",                       value:17.5e-06,   spec:Fixed); // principal
+th_ele   as length           (description:"Electrolyte thickness (m)",                 value:12.5e-06,   spec:Fixed); // principal
+por      as notype           (description:"Porosity (-)",                                   value:0.3,   spec:Fixed); // principal
+tor      as notype           (description:"Tortuosity (-)",                                 value:5.0,   spec:Fixed); // principal
+d_p      as length           (description:"Porous diameter (m)",                        value:0.5e-06,   spec:Fixed); // principal
+
+/*
+Ea_LSM   as RealParameter    (description:"LSM Activation energy (eV)",                               value:0.09836);
+Ea_YSZ   as RealParameter    (description:"YSZ Activation energy (eV)",                               value:0.09836);
+o_0LSM   as RealParameter    (description:"LSM pre-exponential factor (eV)",                             value:1.09);
+o_0YSZ   as RealParameter    (description:"YSZ pre-exponential factor (eV)",                             value:1.07);
+*/
+
+// Variables***************************************************************************************************************************************************************
+
+T_s      as temperature      (description:"Stack temperature (°C)",                           value:700, spec:Fixed);
+P_s      as pressure         (description:"Stack pressure (bar)",                             value:5.0, spec:Fixed);
+P0_Pa    as notype           (description:"Atmospheric Pressure in Pascals (Pa)",          value:101325, spec:Fixed);
+U        as notype           (description:"Steam utilization factor (-)",                   value:0.85,  spec:Fixed);
+
+J_0cat   as notype           (description:"Cathode exchange current density (A/m2)",         value:2500, spec:Fixed);
+J_0an    as notype           (description:"Anode exchange current density (A/m2)",           value:6500, spec:Fixed);
+
+o_LSM    as notype           (description:"LSM electric conductivity (S/cm)",                            spec:Free);
+o_YSZ    as notype           (description:"YSZ electric conductivity (S/cm)",                            spec:Free);
+o_NiYSZ  as notype           (description:"Ni-YSZ electric conductivity (S/cm)",                         spec:Free);
+
+p_cat    as notype           (description:"Cathode electric resistivity (cm/S)",                         spec:Free);
+p_an     as notype           (description:"Anode electric resistivity (cm/S)",                           spec:Free);
+p_ele    as notype           (description:"Electrolyte electric resistivity (cm/S)",                     spec:Free);
+
+Deff_H2O as notype           (description:"Water effective diffusion coefficient (m2/s)",                spec:Free);
+Deff_O2  as notype           (description:"Oxygen effective diffusion coefficient (m2/s)",               spec:Free);
+Deff_H2  as notype           (description:"Hydrogen effective diffusion coefficient (m2/s)",             spec:Free);
+
+Dk_H2O   as notype           (description:"Water Knudsen term (m2/s)",                                   spec:Free);
+Dk_H2    as notype           (description:"Hydrogen Knudsen term (m2/s)",                                spec:Free);
+Dk_O2    as notype           (description:"Oxygen Knudsen term (m2/s)",                                  spec:Free);
+
+P_Pa     as notype           (description:"Pressure in Pascals (Pa)",                                    spec:Free);
+P_0H2O   as notype           (description:"Water partial pressure ambient (Pa)",                         spec:Free);
+P_0H2    as notype           (description:"Hydrogen partial pressure ambient (Pa)",                      spec:Free);
+P_0O2    as notype           (description:"Oxygen partial pressure ambient (Pa)",                        spec:Free); 
+
+P_H2O    as notype           (description:"Water partial pressure (Pa)",                                 spec:Free);
+P_H2     as notype           (description:"Hydrogen partial pressure (Pa)",                              spec:Free);
+P_O2     as notype           (description:"Oxygen partial pressure (Pa)",                                spec:Free);
+
+n_act_ca as voltage          (description:"Cathode activation overpotential (V)",                        spec:Free);
+n_act_an as voltage          (description:"Anode activation overpotential (V)",                          spec:Free);
+
+n_cnc_ca as voltage          (description:"Cathode concentration overpotential (V)",                     spec:Free);
+n_cnc_an as voltage          (description:"Anode concentration overpotential (V)",                       spec:Free);
+
+n_act    as voltage          (description:"Activation overpotential (V)",                                spec:Free);
+n_cnc    as voltage          (description:"Concentration overpotential (V)",                             spec:Free);
+n_ohm    as voltage          (description:"Ohmic overpotential (V)",                                     spec:Free);
+
+V_rev    as voltage          (description:"Reversible voltage (V)",                                      spec:Free);
+V_cell   as voltage          (description:"Cell voltage (V)",                                            spec:Free);
+
+J        as notype           (description:"Current density (A/m2)",                                      spec:Free);
+
+N_H2     as notype           (description:"Hydrogen mole flow (mol/s)",                                  spec:Free);
+N_O2     as notype           (description:"Oxygen mole flow (mol/s)",                                    spec:Free);
+
+Qin      as enthflow         (description:"Heat entering the system (GJ/h)",                             spec:Free);
+P_H      as enth_mol         (description:"Products enthalpy",                                           spec:Free);
+
+Rho_C    as dens_mol_liq     (description:"Liquid molar density (kmol/m3)",                              spec:Free);
+Rho_A    as dens_mol_liq     (description:"Liquid molar density (kmol/m3)",                              spec:Free);
+
+Fcat(Componentlist)       as flow_mol     (description:"Cathode vapor molar flow rate",                  spec:Free);
+Fan (Componentlist)       as flow_mol     (description:"Anode vapor molar flow rate",                    spec:Free);
+
+Prod(Componentlist)       as flow_mol     (description:"Products molar flow rate",                       spec:Free);
+P_z (componentlist)       as molefraction (description:"Products fractions"      ,                       spec:Free);
+
+MW(componentlist) as hidden molweight;
+call(MW) = pMolWeights() componentlist;
+
+aaMBzero as realvariable;
+aaHBone as realvariable;
+
+// Equations****************************************************************************************************************************************************************
+
+Win.W  = V_cell*J*N_cells*A_cells/1000;
+
+P_Pa   = P_s/1.0e-05;
+
+P_0H2O = Cathode.z("H2O")*P0_Pa;
+P_0H2  = Cathode.z("H2")*P0_Pa;
+P_0O2  = Anode.z("O2")*P0_Pa;
+
+P_H2O = Cathode.z("H2O")*P_Pa;
+P_H2  = Cathode.z("H2")*P_Pa;
+P_O2  = Anode.z("O2")*P_Pa;
+
+Dk_H2O = (d_p/3)*SQRT((8*R*(T_s+273.15)*1000)/(PI*MW("H2O")));
+Dk_H2  = (d_p/3)*SQRT((8*R*(T_s+273.15)*1000)/(PI*MW("H2")));
+Dk_O2  = (d_p/3)*SQRT((8*R*(T_s+273.15)*1000)/(PI*MW("O2")));
+
+Deff_H2O = (por/tor)*Dk_H2O;
+Deff_H2  = (por/tor)*Dk_H2;
+Deff_O2  = (por/tor)*Dk_O2;
+
+LOGe(o_LSM*(T_s+273.15))  = (m_LSM*(1/(T_s+273.15))) + b_LSM;
+LOGe(o_YSZ*(T_s+273.15)) = (m_YSZ*(1/(T_s+273.15))) + b_YSZ;
+o_NiYSZ = (m_NiYSZ*(T_s+273.15) + b_NiYSZ);
+
+p_cat = 1/o_NiYSZ;
+p_an  = 1/o_LSM;
+p_ele = 1/o_YSZ;
+
+n_cnc_ca = (R*(T_s+273.15)/(0.5*FC))*LOGe((1+(J*R*(T_s+273.15)*th_cat/(2*FC*Deff_H2*P_0H2)))/(1-(J*R*(T_s+273.15)*th_cat/(2*FC*Deff_H2O*P_0H2O))));
+n_cnc_an = (R*(T_s+273.15)/(ne*FC))*LOGe((1+(J*R*(T_s+273.15)*th_an/(4*FC*Deff_O2*P_0O2)))^0.5);
+
+
+n_act_ca = (R*(T_s+273.15)/(0.5*FC))*LOGe((J/(2*J_0cat))+SQRT(1+((J/(2*J_0cat))^2)));
+n_act_an = (R*(T_s+273.15)/(ne*FC))*LOGe((J/(2*J_0an))+SQRT(1+((J/(2*J_0an))^2)));
+
+//n_act_ca = (R*(T_s+273.15)/(ne*FC))*(SINH(J/(2*J_0cat)));
+//n_act_an = (R*(T_s+273.15)/(ne*FC))*(SINH(J/(2*J_0an)));
+
+n_cnc = n_cnc_ca + n_cnc_an;
+n_act = n_act_ca + n_act_an;
+n_ohm = J*(((p_an/100)*th_an)+((p_cat/100)*th_cat)+((p_ele/100)*th_ele));
+
+//V_rev1 == (1.229 + (0.8460e-03*(T_s+273.15-298.15))) ;
+//V_rev2 ==  ((R*(T_s+273.15)/(ne*FC))*LOGe(P_H2*(P_O2^0.5)/P_H2O));
+//V_rev  = V_rev1 + V_rev2;
+
+
+T_kel as Temperature(description:"Stack temperature (°K)",                           spec:Free);
+H_water as notype(description:"Stack temperature (°K)",                           spec:Free);
+H_hydrog as notype(description:"Stack temperature (°K)",                           spec:Free);
+H_oxyg as notype(description:"Stack temperature (°K)",                           spec:Free);
+S_water as notype(description:"Stack temperature (°K)",                           spec:Free);
+S_hydrog as notype(description:"Stack temperature (°K)",                           spec:Free);
+S_oxyg as notype(description:"Stack temperature (°K)",                           spec:Free);
+Gibbs_Stand as notype(description:"Stack temperature (°K)",                           spec:Free);
+
+T_kel=T_s+273.15;
+H_water=180*T_kel+(4/5)*-85.4*(T_kel^(5/4))+2/3*15.6*(T_kel^(3/2))+4/7*-0.858*(T_kel^(7/4));
+H_hydrog=79.5*T_kel+(4/5)*-26.3*(T_kel^(5/4))+2/3*4.23*(T_kel^(3/2))+4/7*-0.197*(T_kel^(7/4));
+H_oxyg=10.3*T_kel+(4/5)*5.4*(T_kel^(5/4))+2/3*-0.18*(T_kel^(3/2))+4/7*0*(T_kel^(7/4));
+
+S_water=180*LOGe(T_kel)+(4)*-85.4*(T_kel^(1/4))+2*15.6*(T_kel^(1/2))+4/3*-0.858*(T_kel^(3/4))-R*LOGe(P_s/10); //Pressure in MPa
+S_hydrog=79.5*LOGe(T_kel)+(4)*-26.3*(T_kel^(1/4))+2*4.23*(T_kel^(1/2))+4/3*-0.197*(T_kel^(3/4))-R*LOGe(P_s/10);
+S_oxyg=10.3*LOGe(T_kel)+(4)*5.4*(T_kel^(1/4))+2*-0.18*(T_kel^(1/2))+4/3*0*(T_kel^(3/4))-R*LOGe(P_s/10);
+
+Gibbs_Stand=(H_hydrog+0.5*H_oxyg-H_water)-T_kel*(S_hydrog+0.5*S_oxyg-S_water);
+
+
+//V_rev  = (1.229 - (0.8460e-03*(T_s+273.15-298.15))) + ((R*(T_s+273.15)/(ne*FC))*LOGe(P_H2*(P_O2^0.5)/P_H2O));//
+V_rev  = (-Gibbs_Stand/(ne*FC) + ((R*(T_s+273.15)/(ne*FC))*LOGe(P_H2*(P_O2^0.5)/P_H2O)))*0.9;
+
+V_cell = V_rev + n_act + n_cnc;// + n_ohm;
+
+N_H2 = J*i*A_cells*N_cells/(ne*FC);
+N_O2 = N_H2/2;
+
+//N_H2 = FlowIn.z("H2O")*FlowIn.F*(1-U)*1000/3600;
+//N_O2 = N_H2/2;
+
+// Mass Balance*************************************************************************************************************************************************************
+
+// At Cathode
+
+Fcat("H2")   =  (N_H2*3600/1000) + (FlowIn.z("H2")*FlowIn.F);
+Fcat("H2O")  =  (FlowIn.z("H2O")*FlowIn.F) - (N_H2*3600/1000);
+Fcat("O2")   =  0;
+Fcat("N2")   =  FlowIn.z("N2")*FlowIn.F/2;
+Fcat("CO2")  =  FlowIn.z("CO2")*FlowIn.F/2;
+Fcat("CH4")  =  FlowIn.z("CH4")*FlowIn.F/2;
+Fcat("TEG")  =  FlowIn.z("TEG")*FlowIn.F/2;
+Fcat("EG")   =  FlowIn.z("EG")*FlowIn.F/2;
+Fcat("DMPG") =  FlowIn.z("DMPG")*FlowIn.F/2;
+
+// At Anode
+
+Fan("O2")    =  (N_O2*3600/1000) + (FlowIn.z("O2")*FlowIn.F);
+Fan("H2O")   =  0;
+Fan("H2")    =  0;
+Fan("N2")    =  FlowIn.z("N2")*FlowIn.F/2;
+Fan("CO2")   =  FlowIn.z("CO2")*FlowIn.F/2;
+Fan("CH4")   =  FlowIn.z("CH4")*FlowIn.F/2;
+Fan("TEG")   =  FlowIn.z("TEG")*FlowIn.F/2;
+Fan("EG")    =  FlowIn.z("EG")*FlowIn.F/2;
+Fan("DMPG")  =  FlowIn.z("DMPG")*FlowIn.F/2;
+
+// Productos
+
+Prod("O2")   =  (N_O2*3600/1000) + (FlowIn.z("O2")*FlowIn.F);
+Prod("H2")   =  (N_H2*3600/1000) + (FlowIn.z("H2")*FlowIn.F);
+Prod("H2O")  =  (FlowIn.z("H2O")*FlowIn.F)- (N_H2*3600/1000);
+Prod("N2")   =  FlowIn.z("N2")*FlowIn.F;
+Prod("CO2")  =  FlowIn.z("CO2")*FlowIn.F;
+Prod("CH4")  =  FlowIn.z("CH4")*FlowIn.F;
+Prod("TEG")  =  FlowIn.z("TEG")*FlowIn.F;
+Prod("EG")   =  FlowIn.z("EG")*FlowIn.F;
+Prod("DMPG") =  FlowIn.z("DMPG")*FlowIn.F;
+
+// Port's outputs*************************************************************************************************************************************************************
+
+// Cathode
+
+Cathode.F = SIGMA(Fcat);
+Cathode.z = Fcat/Cathode.F;
+Cathode.T = T_s;
+Cathode.P = P_s*0.98;
+
+call(Cathode.h) = pEnth_Mol_Liq(Cathode.T, Cathode.P, Cathode.Z);
+call(Rho_C)     = pDens_Mol_Liq(Cathode.T, Cathode.P, Cathode.Z);
+
+Cathode.V = 1/Rho_C;
+
+// Anode
+
+Anode.F = SIGMA(Fan);
+Anode.z = Fan/Anode.F;
+
+Anode.T = T_s;
+Anode.P = P_s*0.98;
+
+call(Anode.h) = pEnth_Mol_Liq(Anode.T, Anode.P, Anode.Z);
+call(Rho_A)   = pDens_Mol_Liq(Anode.T, Anode.P, Anode.Z);
+
+Anode.V = 1/Rho_A;
+
+// Energy Balance************************************************************************************************************************************************************
+
+//call(FlowIn.h) = pEnth_Mol(FlowIn.T, FlowIn.P, FlowIn.Z);
+P_z = Prod/SIGMA(Prod);
+
+call(P_H) = pEnth_Mol(T_s, Cathode.P, P_z);
+Qin = FlowIn.F*FlowIn.h + (Win.W*0.0036);
+
+SIGMA(Prod)*P_H + Qout.Q = Qin;
+
+/*
+s_in     as entr_mol         (description:"Molar entrophy (kJ/kmol/K)",                                 spec: Free); // Se necesita por kG
+h_in     as enth_mol         (description:"Molar enthalpy (kJ/kmol/K)",                                 spec: Free); //
+
+Call (s_in) = pEntr_Mol_Liq(FlowIn.T, FlowIn.P, FlowIn.z) ComponentList;
+Call (h_in) = pEnth_Mol_Liq(FlowIn.T, FlowIn.P, FlowIn.z) ComponentList;
+*/
+
+// Checks**********************************************************************************************************************************************************************
+
+aaMBzero = - sigma(FlowIn.F*FlowIn.z*MW) + sigma(Fan*MW) + sigma(Fcat*MW);
+aaHBone = (Anode.F*Anode.h + Cathode.F*Cathode.h + Qout.Q)/(FlowIn.F*FlowIn.h+(Win.W*0.0036));
+
+//SYSTEM SECTION - WARNING: DO NOT EDIT
+  Current_Icon : "System";
+TYPE SOEC_alg_T0 ROLE "ICON" text
+Name = SOEC_stack
+lines = 303
+
+sub main
+call Path.Begin
+'' <<Path:0
+call Path.Ellipse(-2.1,5.7,0.4,0.15,0,2,0,1)
+call Path.Polygon(4,1,8,1)
+call Path.lineto(6.25121,4.49613)
+call Path.lineto(1.26063,3.24849)
+call Path.lineto(-6.74151,4.41009)
+call Path.lineto(-1.60035,5.44262)
+call Path.Ellipse(-6.25,-3.2,0.4,0.3,0,2,0,1)
+call Path.Ellipse(-2.85,-3.75,0.4,0.3,0,2,0,1)
+call Path.Ellipse(1.2,-4.35,0.4,0.3,0,2,0,1)
+call Path.Ellipse(3.7,-3.8,0.4,0.3,0,2,0,1)
+call Path.Ellipse(5.75,-3.2,0.4,0.3,0,2,0,1)
+call Path.Box(5.25,-2.3,6.25,-3.2,2,0,1)
+call Path.Box(3.2,-2.9,4.2,-3.8,2,0,1)
+call Path.Box(0.700001,-3.45,1.7,-4.35,2,0,1)
+call Path.Box(-3.35,-2.85,-2.35,-3.75,2,0,1)
+call Path.Box(-6.75,-2.3,-5.75,-3.2,2,0,1)
+call Path.Polygon(4,2,0,1)
+call Path.lineto(1.26063,-3.29089)
+call Path.lineto(6.25121,-2.00022)
+call Path.lineto(6.25121,-2.75311)
+call Path.lineto(1.26063,-4.04378)
+call Path.Ellipse(1.55,6.2,0.4,0.15,0,2,0,1)
+call Path.Box(1.15,6.15,1.95,4.75,2,0,1)
+call Path.Box(-2.5,5.65,-1.7,4.25,2,0,1)
+call Path.Ellipse(-3.45,5.8,0.25,0.15,0,2,3,1)
+call Path.Box(-3.7,5.75,-3.2,4.75,2,3,1)
+call Path.Polygon(4,2,3,1)
+call Path.lineto(-3.64391,5.206)
+call Path.lineto(-3.25671,5.09845)
+call Path.lineto(-3.25671,5.3996)
+call Path.lineto(-3.64391,5.50716)
+call Path.Ellipse(2.8,5.45,0.3,0.15,0,2,0,1)
+call Path.Box(2.5,5.4,3.1,4,2,0,1)
+call Path.Polygon(4,2,0,1)
+call Path.lineto(2.5513,4.84031)
+call Path.lineto(3.04605,4.71125)
+call Path.lineto(3.04605,4.99089)
+call Path.lineto(2.5513,5.14147)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,3.35605)
+call Path.lineto(1.26063,2.1084)
+call Path.lineto(1.26063,2.40956)
+call Path.lineto(-6.74151,3.6572)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,2.40956)
+call Path.lineto(6.25121,3.70022)
+call Path.lineto(6.25121,3.39907)
+call Path.lineto(1.26063,2.1084)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,3.6572)
+call Path.lineto(1.26063,2.40956)
+call Path.lineto(1.26063,2.71071)
+call Path.lineto(-6.74151,3.95836)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,2.71071)
+call Path.lineto(6.25121,4.00138)
+call Path.lineto(6.25121,3.70022)
+call Path.lineto(1.26063,2.40956)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,3.05489)
+call Path.lineto(1.26063,1.80725)
+call Path.lineto(1.26063,2.1084)
+call Path.lineto(-6.74151,3.35605)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,2.1084)
+call Path.lineto(6.25121,3.39907)
+call Path.lineto(6.25121,3.09791)
+call Path.lineto(1.26063,1.80725)
+call Path.Polygon(4,2,0,1)
+call Path.lineto(-6.74151,-2.79613)
+call Path.lineto(1.26063,-4.04378)
+call Path.lineto(1.26063,-3.29089)
+call Path.lineto(-6.74151,-2.04324)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,0.602623)
+call Path.lineto(6.25121,1.89329)
+call Path.lineto(6.25121,1.59213)
+call Path.lineto(1.26063,0.301467)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,1.80725)
+call Path.lineto(6.25121,3.09791)
+call Path.lineto(6.25121,2.79676)
+call Path.lineto(1.26063,1.50609)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,2.75373)
+call Path.lineto(1.26063,1.50609)
+call Path.lineto(1.26063,1.80725)
+call Path.lineto(-6.74151,3.05489)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,1.50609)
+call Path.lineto(6.25121,2.79676)
+call Path.lineto(6.25121,2.4956)
+call Path.lineto(1.26063,1.20493)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,2.45258)
+call Path.lineto(1.26063,1.20493)
+call Path.lineto(1.26063,1.50609)
+call Path.lineto(-6.74151,2.75373)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,1.20493)
+call Path.lineto(6.25121,2.4956)
+call Path.lineto(6.25121,2.19445)
+call Path.lineto(1.26063,0.903779)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,2.15142)
+call Path.lineto(1.26063,0.903779)
+call Path.lineto(1.26063,1.20493)
+call Path.lineto(-6.74151,2.45258)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,0.903779)
+call Path.lineto(6.25121,2.19445)
+call Path.lineto(6.25121,1.89329)
+call Path.lineto(1.26063,0.602623)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,1.85027)
+call Path.lineto(1.26063,0.602623)
+call Path.lineto(1.26063,0.903779)
+call Path.lineto(-6.74151,2.15142)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,-2.98973)
+call Path.lineto(6.25121,-1.69907)
+call Path.lineto(6.25121,-2.00022)
+call Path.lineto(1.26063,-3.29089)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.69848,1.54911)
+call Path.lineto(1.30365,0.301467)
+call Path.lineto(1.30365,0.602623)
+call Path.lineto(-6.69848,1.85027)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,0.301467)
+call Path.lineto(6.25121,1.59213)
+call Path.lineto(6.25121,1.29098)
+call Path.lineto(1.26063,0.000311887)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,1.24796)
+call Path.lineto(1.26063,0.000311887)
+call Path.lineto(1.26063,0.301467)
+call Path.lineto(-6.74151,1.54911)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,0.000311887)
+call Path.lineto(6.25121,1.29098)
+call Path.lineto(6.25121,0.989823)
+call Path.lineto(1.26063,-0.300844)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,0.946801)
+call Path.lineto(1.26063,-0.300844)
+call Path.lineto(1.26063,0.000311887)
+call Path.lineto(-6.74151,1.24796)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,-0.300844)
+call Path.lineto(6.25121,0.989823)
+call Path.lineto(6.25121,0.710179)
+call Path.lineto(1.26063,-0.601999)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,0.645645)
+call Path.lineto(1.26063,-0.601999)
+call Path.lineto(1.26063,-0.300844)
+call Path.lineto(-6.74151,0.946801)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,-0.601999)
+call Path.lineto(6.25121,0.710179)
+call Path.lineto(6.25121,0.409023)
+call Path.lineto(1.26063,-0.903155)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,0.34449)
+call Path.lineto(1.26063,-0.903155)
+call Path.lineto(1.26063,-0.601999)
+call Path.lineto(-6.74151,0.645645)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,-0.903155)
+call Path.lineto(6.25121,0.409023)
+call Path.lineto(6.25121,0.107867)
+call Path.lineto(1.26063,-1.20431)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,0.0433341)
+call Path.lineto(1.26063,-1.20431)
+call Path.lineto(1.26063,-0.903155)
+call Path.lineto(-6.74151,0.34449)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,-1.20431)
+call Path.lineto(6.25121,0.107867)
+call Path.lineto(6.25121,-0.193288)
+call Path.lineto(1.26063,-1.50547)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,-0.257821)
+call Path.lineto(1.26063,-1.50547)
+call Path.lineto(1.26063,-1.20431)
+call Path.lineto(-6.74151,0.0433341)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,-1.50547)
+call Path.lineto(6.25121,-0.193288)
+call Path.lineto(6.25121,-0.494444)
+call Path.lineto(1.26063,-1.80662)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,-0.558977)
+call Path.lineto(1.26063,-1.80662)
+call Path.lineto(1.26063,-1.50547)
+call Path.lineto(-6.74151,-0.257821)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,-1.80662)
+call Path.lineto(6.25121,-0.494444)
+call Path.lineto(6.25121,-0.795599)
+call Path.lineto(1.26063,-2.10778)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,-0.860133)
+call Path.lineto(1.26063,-2.10778)
+call Path.lineto(1.26063,-1.80662)
+call Path.lineto(-6.74151,-0.558977)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,-2.10778)
+call Path.lineto(6.25121,-0.795599)
+call Path.lineto(6.25121,-1.09675)
+call Path.lineto(1.26063,-2.40893)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,-1.13978)
+call Path.lineto(1.26063,-2.40893)
+call Path.lineto(1.26063,-2.10778)
+call Path.lineto(-6.74151,-0.860133)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,-2.40893)
+call Path.lineto(6.25121,-1.09675)
+call Path.lineto(6.25121,-1.39791)
+call Path.lineto(1.26063,-2.71009)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,-1.44093)
+call Path.lineto(1.26063,-2.71009)
+call Path.lineto(1.26063,-2.40893)
+call Path.lineto(-6.74151,-1.13978)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(1.26063,-2.71009)
+call Path.lineto(6.25121,-1.39791)
+call Path.lineto(6.25121,-1.69907)
+call Path.lineto(1.26063,-2.98973)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,-1.74209)
+call Path.lineto(1.26063,-2.98973)
+call Path.lineto(1.26063,-2.71009)
+call Path.lineto(-6.74151,-1.44093)
+call Path.Polygon(4,2,7,1)
+call Path.lineto(-6.74151,-2.04324)
+call Path.lineto(1.26063,-3.29089)
+call Path.lineto(1.26063,-2.98973)
+call Path.lineto(-6.74151,-1.74209)
+call Path.Polygon(4,2,0,1)
+call Path.lineto(-6.74151,3.89382)
+call Path.lineto(1.26063,2.71071)
+call Path.lineto(1.26063,3.24849)
+call Path.lineto(-6.74151,4.41009)
+call Path.Polygon(4,2,0,1)
+call Path.lineto(1.26063,3.24849)
+call Path.lineto(6.25121,4.49613)
+call Path.lineto(6.25121,4.00138)
+call Path.lineto(1.26063,2.71071)
+call Path.Polygon(4,2,0,1)
+call Path.lineto(-2.43928,5.14147)
+call Path.lineto(-1.75093,5.35658)
+call Path.lineto(-1.75093,5.05542)
+call Path.lineto(-2.43928,4.84031)
+call Path.Polygon(4,2,0,1)
+call Path.lineto(1.19609,5.70076)
+call Path.lineto(1.90596,5.89436)
+call Path.lineto(1.90596,5.5932)
+call Path.lineto(1.19609,5.3996)
+'' >>
+call Path.End
+end sub
+
+sub LabPos
+call Label.at(0,0)
+end sub
+
+sub ports
+call Port.name("UniversalIN")
+call Port.at(-6.76181,0.764066)
+call Port.direction(0)
+call Port.name("UniversalOUT")
+call Port.at(6.24153,0.764066)
+call Port.IOtype(1)
+call Port.direction(0)
+call Port.name("Win")
+call Port.at(-3.45082,5.94992)
+call Port.direction(270)
+call Port.name("FlowIn")
+call Port.at(-2.09394,5.84777)
+call Port.direction(270)
+call Port.name("Cathode")
+call Port.at(1.54968,6.3497)
+call Port.IOtype(1)
+call Port.direction(90)
+call Port.name("Anode")
+call Port.at(2.8014,5.59991)
+call Port.IOtype(1)
+call Port.direction(90)
+call Port.name("Qout")
+call Port.at(6.23825,1.53024)
+call Port.IOtype(1)
+call Port.direction(0)
+end sub
+
+
+
+endtext
+
+SOEC_alg_T0_I0 as SOEC_alg_T0;
+SystemData : Text
+<FORMLIST DEFAULTFORM="AllVariables">
+</FORMLIST>
+<EXPORTDATA>AS::0::1
+DISPLAY::SOEC_alg
+DESCRIPTION::
+COMPILED::1
+CATEGORY::ACM Models
+GUID400::{3186B96F-8826-4FA9-95B1-8CB9A56588CF}
+PORT::Win::1::Work::Power in (kW)::0
+PORT::Qout::1::Heat::Heat flow out (GJ/hr)::0
+PORT::Anode::1::Mole Fraction::Anode output (kmol/h)::0
+PORT::Cathode::1::Mole Fraction::Chatode output (kmol/h)::0
+PORT::FlowIn::1::Mole Fraction::Electrolyzer feed stream (kmol/h)::0
+QUERY::AllVariables::1::0::3
+</EXPORTDATA>
+EndText;
+TYPE PreSolve ROLE "SCRIPT" TEXT ' Presolve script for model SOEC_alg
+' Created from block B2 at 1:26:48 p. m. viernes, 7 de junio de 2024
+'
+' Initialize values if:
+'   Aspen Plus EO mode & previously failed to converge,
+'   or Aspen Plus SM mode or HYSYS, and not previously solved,
+'   or running manually in ACM
+
+If (SolutionMode = "Sequential Modular" and SMStatus <> "Converged") _
+    or (SolutionMode = "Equation Oriented" and EOStatus = "Not converged") _
+    or (SolutionMode = "") Then
+
+  Application.Msg "    PreSolve: Performing Initialization "
+  DisableIncrementalUpdate
+
+    If A_cells.spec <> "Fixed" Then A_cells.value = 3.890000e-02
+    If aaHBone.spec <> "Fixed" Then aaHBone.value = 9.999960e-01
+    If aaMBzero.spec <> "Fixed" Then aaMBzero.value = 0.000000e+00
+    If Anode.F.spec <> "Fixed" Then Anode.F.value = 9.407140e-02
+    If Anode.h.spec <> "Fixed" Then Anode.h.value = 2.525900e-02
+    If Anode.P.spec <> "Fixed" Then Anode.P.value = 1.764000e+00
+    If Anode.T.spec <> "Fixed" Then Anode.T.value = 8.000000e+02
+    If Anode.V.spec <> "Fixed" Then Anode.V.value = 7.371650e-02
+    If Anode.z("CH4").spec <> "Fixed" Then Anode.z("CH4").value = 0.000000e+00
+    If Anode.z("CO2").spec <> "Fixed" Then Anode.z("CO2").value = 0.000000e+00
+    If Anode.z("DMPG").spec <> "Fixed" Then Anode.z("DMPG").value = 0.000000e+00
+    If Anode.z("EG").spec <> "Fixed" Then Anode.z("EG").value = 0.000000e+00
+    If Anode.z("H2").spec <> "Fixed" Then Anode.z("H2").value = 0.000000e+00
+    If Anode.z("H2O").spec <> "Fixed" Then Anode.z("H2O").value = 0.000000e+00
+    If Anode.z("N2").spec <> "Fixed" Then Anode.z("N2").value = 0.000000e+00
+    If Anode.z("O2").spec <> "Fixed" Then Anode.z("O2").value = 1.000000e+00
+    If Anode.z("TEG").spec <> "Fixed" Then Anode.z("TEG").value = 0.000000e+00
+    If Cathode.F.spec <> "Fixed" Then Cathode.F.value = 1.000000e+00
+    If Cathode.h.spec <> "Fixed" Then Cathode.h.value = -1.448640e-01
+    If Cathode.P.spec <> "Fixed" Then Cathode.P.value = 1.764000e+00
+    If Cathode.T.spec <> "Fixed" Then Cathode.T.value = 8.000000e+02
+    If Cathode.V.spec <> "Fixed" Then Cathode.V.value = 6.218580e-02
+    If Cathode.z("CH4").spec <> "Fixed" Then Cathode.z("CH4").value = 0.000000e+00
+    If Cathode.z("CO2").spec <> "Fixed" Then Cathode.z("CO2").value = 0.000000e+00
+    If Cathode.z("DMPG").spec <> "Fixed" Then Cathode.z("DMPG").value = 0.000000e+00
+    If Cathode.z("EG").spec <> "Fixed" Then Cathode.z("EG").value = 0.000000e+00
+    If Cathode.z("H2").spec <> "Fixed" Then Cathode.z("H2").value = 2.881430e-01
+    If Cathode.z("H2O").spec <> "Fixed" Then Cathode.z("H2O").value = 7.118570e-01
+    If Cathode.z("N2").spec <> "Fixed" Then Cathode.z("N2").value = 0.000000e+00
+    If Cathode.z("O2").spec <> "Fixed" Then Cathode.z("O2").value = 0.000000e+00
+    If Cathode.z("TEG").spec <> "Fixed" Then Cathode.z("TEG").value = 0.000000e+00
+    If d_p.spec <> "Fixed" Then d_p.value = 5.000000e-07
+    If Deff_H2.spec <> "Fixed" Then Deff_H2.value = 3.357260e-05
+    If Deff_H2O.spec <> "Fixed" Then Deff_H2O.value = 1.123050e-05
+    If Deff_O2.spec <> "Fixed" Then Deff_O2.value = 8.426570e-06
+    If Dk_H2.spec <> "Fixed" Then Dk_H2.value = 5.595440e-04
+    If Dk_H2O.spec <> "Fixed" Then Dk_H2O.value = 1.871740e-04
+    If Dk_O2.spec <> "Fixed" Then Dk_O2.value = 1.404430e-04
+    If Fan("CH4").spec <> "Fixed" Then Fan("CH4").value = 0.000000e+00
+    If Fan("CO2").spec <> "Fixed" Then Fan("CO2").value = 0.000000e+00
+    If Fan("DMPG").spec <> "Fixed" Then Fan("DMPG").value = 0.000000e+00
+    If Fan("EG").spec <> "Fixed" Then Fan("EG").value = 0.000000e+00
+    If Fan("H2").spec <> "Fixed" Then Fan("H2").value = 0.000000e+00
+    If Fan("H2O").spec <> "Fixed" Then Fan("H2O").value = 0.000000e+00
+    If Fan("N2").spec <> "Fixed" Then Fan("N2").value = 0.000000e+00
+    If Fan("O2").spec <> "Fixed" Then Fan("O2").value = 9.407140e-02
+    If Fan("TEG").spec <> "Fixed" Then Fan("TEG").value = 0.000000e+00
+    If Fcat("CH4").spec <> "Fixed" Then Fcat("CH4").value = 0.000000e+00
+    If Fcat("CO2").spec <> "Fixed" Then Fcat("CO2").value = 0.000000e+00
+    If Fcat("DMPG").spec <> "Fixed" Then Fcat("DMPG").value = 0.000000e+00
+    If Fcat("EG").spec <> "Fixed" Then Fcat("EG").value = 0.000000e+00
+    If Fcat("H2").spec <> "Fixed" Then Fcat("H2").value = 2.881430e-01
+    If Fcat("H2O").spec <> "Fixed" Then Fcat("H2O").value = 7.118570e-01
+    If Fcat("N2").spec <> "Fixed" Then Fcat("N2").value = 0.000000e+00
+    If Fcat("O2").spec <> "Fixed" Then Fcat("O2").value = 0.000000e+00
+    If Fcat("TEG").spec <> "Fixed" Then Fcat("TEG").value = 0.000000e+00
+    If FlowIn.F.spec <> "Fixed" Then FlowIn.F.value = 1.000000e+00
+    If FlowIn.h.spec <> "Fixed" Then FlowIn.h.value = -2.119760e-01
+    If FlowIn.z("CH4").spec <> "Fixed" Then FlowIn.z("CH4").value = 0.000000e+00
+    If FlowIn.z("CO2").spec <> "Fixed" Then FlowIn.z("CO2").value = 0.000000e+00
+    If FlowIn.z("DMPG").spec <> "Fixed" Then FlowIn.z("DMPG").value = 0.000000e+00
+    If FlowIn.z("EG").spec <> "Fixed" Then FlowIn.z("EG").value = 0.000000e+00
+    If FlowIn.z("H2").spec <> "Fixed" Then FlowIn.z("H2").value = 1.000000e-01
+    If FlowIn.z("H2O").spec <> "Fixed" Then FlowIn.z("H2O").value = 9.000000e-01
+    If FlowIn.z("N2").spec <> "Fixed" Then FlowIn.z("N2").value = 0.000000e+00
+    If FlowIn.z("O2").spec <> "Fixed" Then FlowIn.z("O2").value = 0.000000e+00
+    If FlowIn.z("TEG").spec <> "Fixed" Then FlowIn.z("TEG").value = 0.000000e+00
+    If Gibbs_Stand.spec <> "Fixed" Then Gibbs_Stand.value = -1.747640e+05
+    If H_hydrog.spec <> "Fixed" Then H_hydrog.value = 3.257020e+04
+    If H_oxyg.spec <> "Fixed" Then H_oxyg.value = 3.336920e+04
+    If H_water.spec <> "Fixed" Then H_water.value = 4.049360e+04
+    If i.spec <> "Fixed" Then i.value = 1.000000e+00
+    If J.spec <> "Fixed" Then J.value = 6.481350e+03
+    If J_0an.spec <> "Fixed" Then J_0an.value = 6.500000e+03
+    If J_0cat.spec <> "Fixed" Then J_0cat.value = 2.500000e+03
+    If n_act.spec <> "Fixed" Then n_act.value = 2.205310e-01
+    If n_act_an.spec <> "Fixed" Then n_act_an.value = 2.216020e-02
+    If n_act_ca.spec <> "Fixed" Then n_act_ca.value = 1.983710e-01
+    If N_cells.spec <> "Fixed" Then N_cells.value = 4.000000e+01
+    If n_cnc.spec <> "Fixed" Then n_cnc.value = 3.978260e-02
+    If n_cnc_an.spec <> "Fixed" Then n_cnc_an.value = 7.089420e-05
+    If n_cnc_ca.spec <> "Fixed" Then n_cnc_ca.value = 3.971170e-02
+    If N_H2.spec <> "Fixed" Then N_H2.value = 5.226190e-02
+    If N_O2.spec <> "Fixed" Then N_O2.value = 2.613090e-02
+    If n_ohm.spec <> "Fixed" Then n_ohm.value = 2.576900e-01
+    If o_LSM.spec <> "Fixed" Then o_LSM.value = 7.198630e-02
+    If o_NiYSZ.spec <> "Fixed" Then o_NiYSZ.value = 1.156300e+02
+    If o_YSZ.spec <> "Fixed" Then o_YSZ.value = 3.351140e-03
+    If P0_Pa.spec <> "Fixed" Then P0_Pa.value = 1.013250e+05
+    If P_0H2.spec <> "Fixed" Then P_0H2.value = 2.919610e+04
+    If P_0H2O.spec <> "Fixed" Then P_0H2O.value = 7.212890e+04
+    If P_0O2.spec <> "Fixed" Then P_0O2.value = 1.013250e+05
+    If p_an.spec <> "Fixed" Then p_an.value = 1.389150e+01
+    If p_cat.spec <> "Fixed" Then p_cat.value = 8.648250e-03
+    If p_ele.spec <> "Fixed" Then p_ele.value = 2.984060e+02
+    If P_H.spec <> "Fixed" Then P_H.value = -1.303060e-01
+    If P_H2.spec <> "Fixed" Then P_H2.value = 5.186570e+04
+    If P_H2O.spec <> "Fixed" Then P_H2O.value = 1.281340e+05
+    If P_O2.spec <> "Fixed" Then P_O2.value = 1.800000e+05
+    If P_Pa.spec <> "Fixed" Then P_Pa.value = 1.800000e+05
+    If P_s.spec <> "Fixed" Then P_s.value = 1.800000e+00
+    If P_z("CH4").spec <> "Fixed" Then P_z("CH4").value = 0.000000e+00
+    If P_z("CO2").spec <> "Fixed" Then P_z("CO2").value = 0.000000e+00
+    If P_z("DMPG").spec <> "Fixed" Then P_z("DMPG").value = 0.000000e+00
+    If P_z("EG").spec <> "Fixed" Then P_z("EG").value = 0.000000e+00
+    If P_z("H2").spec <> "Fixed" Then P_z("H2").value = 2.631760e-01
+    If P_z("H2O").spec <> "Fixed" Then P_z("H2O").value = 6.509420e-01
+    If P_z("N2").spec <> "Fixed" Then P_z("N2").value = 0.000000e+00
+    If P_z("O2").spec <> "Fixed" Then P_z("O2").value = 8.588220e-02
+    If P_z("TEG").spec <> "Fixed" Then P_z("TEG").value = 0.000000e+00
+    If por.spec <> "Fixed" Then por.value = 3.000000e-01
+    If Prod("CH4").spec <> "Fixed" Then Prod("CH4").value = 0.000000e+00
+    If Prod("CO2").spec <> "Fixed" Then Prod("CO2").value = 0.000000e+00
+    If Prod("DMPG").spec <> "Fixed" Then Prod("DMPG").value = 0.000000e+00
+    If Prod("EG").spec <> "Fixed" Then Prod("EG").value = 0.000000e+00
+    If Prod("H2").spec <> "Fixed" Then Prod("H2").value = 2.881430e-01
+    If Prod("H2O").spec <> "Fixed" Then Prod("H2O").value = 7.118570e-01
+    If Prod("N2").spec <> "Fixed" Then Prod("N2").value = 0.000000e+00
+    If Prod("O2").spec <> "Fixed" Then Prod("O2").value = 9.407140e-02
+    If Prod("TEG").spec <> "Fixed" Then Prod("TEG").value = 0.000000e+00
+    If Qin.spec <> "Fixed" Then Qin.value = -1.650320e-01
+    If Qout.Q.spec <> "Fixed" Then Qout.Q.value = -2.254340e-02
+    If Rho_A.spec <> "Fixed" Then Rho_A.value = 1.356550e+01
+    If Rho_C.spec <> "Fixed" Then Rho_C.value = 1.608100e+01
+    If S_hydrog.spec <> "Fixed" Then S_hydrog.value = 1.948110e+02
+    If S_oxyg.spec <> "Fixed" Then S_oxyg.value = 1.979700e+02
+    If S_water.spec <> "Fixed" Then S_water.value = 1.227810e+02
+    If T_kel.spec <> "Fixed" Then T_kel.value = 1.073150e+03
+    If T_s.spec <> "Fixed" Then T_s.value = 8.000000e+02
+    If th_an.spec <> "Fixed" Then th_an.value = 1.750000e-05
+    If th_cat.spec <> "Fixed" Then th_cat.value = 3.125000e-04
+    If th_ele.spec <> "Fixed" Then th_ele.value = 1.250000e-05
+    If tor.spec <> "Fixed" Then tor.value = 5.000000e+00
+    If V_cell.spec <> "Fixed" Then V_cell.value = 1.289440e+00
+    If V_rev.spec <> "Fixed" Then V_rev.value = 1.029130e+00
+    If Win.W.spec <> "Fixed" Then Win.W.value = 1.304000e+01
+  EnableIncrementalUpdate
+
+End If
+ENDTEXT
+
+//SYSTEM SECTION END
+End
+SystemData : Text
+globaldatasection
+EndText;
+SystemData : Text
+<FORMLIST DEFAULTFORM="AllGlobals">
+  <FORM NAME="AllGlobals" CLSID="{6BA76840-806B-11D0-BE51-0000C09984EF}">
+    { Version : 1
+SizeX : 5250
+SizeY : 3750
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}
+  </FORM>
+</FORMLIST>
+EndText;
+
+FLOWSHEET
+  B2 as SOEC_alg;
+  Streams("W-IN") as Connection;
+  FEED as Connection;
+  CATHODE as Connection;
+  ANODE as Connection;
+  Streams("Q-OUT") as Connection;
+  Connect B2.Win with Streams("W-IN");
+  Connect B2.FlowIn with FEED;
+  Connect B2.Cathode with CATHODE;
+  Connect B2.Anode with ANODE;
+  Connect B2.Qout with Streams("Q-OUT");
+
+CONSTRAINTS
+  // Flowsheet variables and equations...
+END
+Task PolarizationCurve // <Trigger>
+// For event driven tasks, <Trigger> can be one of:
+Runs At 0              
+//   Runs When <condition>       e.g. Runs When b1.y >= 0.6 or
+//   Runs Once When <condition> e.g. Runs Once When b1.y >= 0.6
+Ramp (BLOCKS("B2").Win.W, 20, 5);
+// SRamp(<variable>, <final value>, <duration>, <type>);
+// Wait For <condition> e.g. when b1.y < 0.6;
+// (Use Wait For to stop the task firing again once trigger condition has been met)
+End
+
+//SYSTEM SECTION - WARNING: DO NOT EDIT
+SystemData : Text
+<FORMLIST DEFAULTFORM="AllVariables">
+  <FORM NAME="PolarizationCurve" CLSID="{F6AD2450-A109-11D0-8B2F-00A024E1AC0C}">
+    { Version : 2
+SizeX : 18192
+SizeY : 7956
+Plot3d: 0
+YAxisIsTime: 1
+MaxIntervals: 3
+PhasePlot: 1
+PhaseXVariable: B2.J
+XProfileName: -
+YProfileName: -
+VariablesPaths : [ 9 B2.V_cell ]
+HistoryVariablesPaths : [ 9 B2.V_cell ]
+ProfileNames : [ ]
+UnusedVariablesPaths : [ ]
+UnusedProfileDimensions : [ ]
+PlotInputFile : { 
+Type:0
+Title:PolarizationCurve
+Xlab:Time $UOM
+Ylab:Y Label
+Nvars:1
+MultiY:0
+Subst:UOM
+NYaxes:1
+RunPlot:0
+PhasePlot:1
+SizeToData:0
+CommunicationIntervals:1
+UseVar:1
+IgnoreLegend:0
+TimeWin:10
+TimeScroll:2
+AlwaysShow:0
+PhaseX:B2.J
+Var:0
+AxisMap:0
+Label:B2.J $UOM
+SubstValue:
+Var:1
+AxisMap:1
+Label:Y Label
+Legend:B2.V_cell $UOM
+SubstValue:V
+Axis:0
+Range:0.00306922 6481.35
+AxisInterval:250 0
+AxisRange:0 6500
+AxisResetRange:1
+AxisScale:0 0
+Multiplier:0
+MultiplierType:0
+AxisFlag:0
+Axis:1
+Range:0.975436 1.28944
+AxisInterval:0.025 0
+AxisRange:0.975 1.3
+AxisResetRange:1
+AxisScale:0 0
+Multiplier:0
+MultiplierType:0
+AxisFlag:0
+Attrib:0 4 1 1
+Attrib2:0 0 0 0 0
+Font:0 10 0:Arial
+Font:1 10 0:Arial
+Font:2 10 0:Arial
+Font:3 10 0:Arial
+Grid:3
+Line:0
+Square:0 0 0 0
+Marker:4 1
+LegendBox:0 1.000000 0.030000
+LegendBox2:90 1.250000 5 } 
+DisplayAs : Plot
+ColumnWidths : [ 576 864 1200 ]
+ProfileDimensions : [ ]
+}
+  </FORM>
+  <FORM NAME="AllVariables" MODEL="B2">
+    { Version : 1
+SizeX : 12888
+SizeY : 9192
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}  </FORM>
+  <FORM NAME="AllVariables" MODEL="FEED">
+    { Version : 1
+SizeX : 13212
+SizeY : 5856
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}  </FORM>
+  <FORM NAME="AllVariables" MODEL="CATHODE">
+    { Version : 1
+SizeX : 11100
+SizeY : 5376
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}  </FORM>
+  <FORM NAME="AllVariables" MODEL="ANODE">
+    { Version : 1
+SizeX : 7725
+SizeY : 4305
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}  </FORM>
+</FORMLIST>
+EndText;
+
+//SYSTEM SECTION END
+  ActiveTasks : ["PolarizationCurve"];
+  B2.aaHBone : 0.9999955195885503;
+  B2.aaMBzero : 1.77635683940025e-015;
+  B2.Anode.F : 9.424764428604006e-002;
+  B2.Anode.h : 2.525896559802314e-002;
+  B2.Anode.P : 1.764;
+  B2.Anode.T : 800.;
+  B2.Anode.V : 7.371654298184613e-002;
+  B2.Anode.z("CH4") : 0.;
+  B2.Anode.z("CO2") : 0.;
+  B2.Anode.z("DMPG") : 0.;
+  B2.Anode.z("EG") : 0.;
+  B2.Anode.z("H2") : 0.;
+  B2.Anode.z("H2O") : 0.;
+  B2.Anode.z("N2") : 0.;
+  B2.Anode.z("O2") : 1.;
+  B2.Anode.z("TEG") : 0.;
+  B2.Cathode.F : 1.;
+  B2.Cathode.h : -0.1447806544849402;
+  B2.Cathode.P : 1.764;
+  B2.Cathode.T : 800.;
+  B2.Cathode.V : 6.219050201124288e-002;
+  B2.Cathode.z("CH4") : 0.;
+  B2.Cathode.z("CO2") : 0.;
+  B2.Cathode.z("DMPG") : 0.;
+  B2.Cathode.z("EG") : 0.;
+  B2.Cathode.z("H2") : 0.2884952885720801;
+  B2.Cathode.z("H2O") : 0.7115047114279198;
+  B2.Cathode.z("N2") : 0.;
+  B2.Cathode.z("O2") : 0.;
+  B2.Cathode.z("TEG") : 0.;
+  B2.Deff_H2 : 3.357263702112171e-005;
+  B2.Deff_H2O : 1.123045326359414e-005;
+  B2.Deff_O2 : 8.426572216649725e-006;
+  B2.Dk_H2 : 5.595439503520286e-004;
+  B2.Dk_H2O : 1.871742210599024e-004;
+  B2.Dk_O2 : 1.404428702774954e-004;
+  B2.Fan("CH4") : 0.;
+  B2.Fan("CO2") : 0.;
+  B2.Fan("DMPG") : 0.;
+  B2.Fan("EG") : 0.;
+  B2.Fan("H2") : 0.;
+  B2.Fan("H2O") : 0.;
+  B2.Fan("N2") : 0.;
+  B2.Fan("O2") : 9.424764428604006e-002;
+  B2.Fan("TEG") : 0.;
+  B2.Fcat("CH4") : 0.;
+  B2.Fcat("CO2") : 0.;
+  B2.Fcat("DMPG") : 0.;
+  B2.Fcat("EG") : 0.;
+  B2.Fcat("H2") : 0.2884952885720801;
+  B2.Fcat("H2O") : 0.7115047114279199;
+  B2.Fcat("N2") : 0.;
+  B2.Fcat("O2") : 0.;
+  B2.Fcat("TEG") : 0.;
+  B2.FlowIn.F.spec : Fixed;
+  B2.FlowIn.F : 1.;
+  B2.FlowIn.h.spec : Fixed;
+  B2.FlowIn.h : -0.2119757273956442;
+  B2.FlowIn.P.spec : Fixed;
+  B2.FlowIn.P : 5.;
+  B2.FlowIn.T.spec : Fixed;
+  B2.FlowIn.T : 820.;
+  B2.FlowIn.z("CH4").spec : Fixed;
+  B2.FlowIn.z("CH4") : 0.;
+  B2.FlowIn.z("CO2").spec : Fixed;
+  B2.FlowIn.z("CO2") : 0.;
+  B2.FlowIn.z("DMPG").spec : Fixed;
+  B2.FlowIn.z("DMPG") : 0.;
+  B2.FlowIn.z("EG").spec : Fixed;
+  B2.FlowIn.z("EG") : 0.;
+  B2.FlowIn.z("H2").spec : Fixed;
+  B2.FlowIn.z("H2") : 0.1;
+  B2.FlowIn.z("H2O").spec : Fixed;
+  B2.FlowIn.z("H2O") : 0.9;
+  B2.FlowIn.z("N2").spec : Fixed;
+  B2.FlowIn.z("N2") : 0.;
+  B2.FlowIn.z("O2").spec : Fixed;
+  B2.FlowIn.z("O2") : 0.;
+  B2.FlowIn.z("TEG").spec : Fixed;
+  B2.FlowIn.z("TEG") : 0.;
+  B2.Gibbs_Stand : -174763.9050673158;
+  B2.H_hydrog : 32570.15436430187;
+  B2.H_oxyg : 33369.21134926976;
+  B2.H_water : 40493.55315660263;
+  B2.i : 1.;
+  B2.J.Record : True;
+  B2.J : 6493.490401984131;
+  B2.MW("CH4") : 16.04276;
+  B2.MW("CO2") : 44.00980000000001;
+  B2.MW("DMPG") : 266.3348400000001;
+  B2.MW("EG") : 62.06844000000001;
+  B2.MW("H2") : 2.015880000000001;
+  B2.MW("H2O") : 18.01528;
+  B2.MW("N2") : 28.01348;
+  B2.MW("O2") : 31.99880000000001;
+  B2.MW("TEG") : 150.17476;
+  B2.n_act : 0.2215475789372162;
+  B2.n_act_an : 2.222988230589976e-002;
+  B2.n_act_ca : 0.1993176966313164;
+  B2.N_cells : 40.;
+  B2.n_cnc : 3.974042215536258e-002;
+  B2.n_cnc_an : 7.102839733710317e-005;
+  B2.n_cnc_ca : 3.966939375802548e-002;
+  B2.N_H2 : 5.235980238113336e-002;
+  B2.N_O2 : 2.617990119056668e-002;
+  B2.n_ohm : 0.258172997900228;
+  B2.o_LSM : 7.198629226279345e-002;
+  B2.o_NiYSZ : 115.630395;
+  B2.o_YSZ : 3.351143899010238e-003;
+  B2.P_0H2 : 29231.78511456601;
+  B2.P_0H2O : 72093.21488543398;
+  B2.P_0O2 : 101325.;
+  B2.p_an : 13.89153363183918;
+  B2.p_cat : 8.648245126205788e-003;
+  B2.p_ele : 298.4055684076564;
+  B2.P_H : -0.1301358030184997;
+  B2.P_H2 : 51929.15194297441;
+  B2.P_H2O : 128070.8480570255;
+  B2.P_O2 : 180000.;
+  B2.P_Pa : 180000.;
+  B2.P_s : 1.8;
+  B2.P_z("CH4") : 0.;
+  B2.P_z("CO2") : 0.;
+  B2.P_z("DMPG") : 0.;
+  B2.P_z("EG") : 0.;
+  B2.P_z("H2") : 0.2636471644042822;
+  B2.P_z("H2O") : 0.6502227490671483;
+  B2.P_z("N2") : 0.;
+  B2.P_z("O2") : 8.613008652856959e-002;
+  B2.P_z("TEG") : 0.;
+  B2.Prod("CH4") : 0.;
+  B2.Prod("CO2") : 0.;
+  B2.Prod("DMPG") : 0.;
+  B2.Prod("EG") : 0.;
+  B2.Prod("H2") : 0.2884952885720801;
+  B2.Prod("H2O") : 0.7115047114279199;
+  B2.Prod("N2") : 0.;
+  B2.Prod("O2") : 9.424764428604006e-002;
+  B2.Prod("TEG") : 0.;
+  B2.Qin : -0.1650317273956442;
+  B2.Qout.Q : -2.263093150537879e-002;
+  B2.Rho_A : 13.56547607293882;
+  B2.Rho_C : 16.07962578946892;
+  B2.S_hydrog : 194.8113529653528;
+  B2.S_oxyg : 197.9700299300127;
+  B2.S_water : 122.7810280900293;
+  B2.T_kel : 1073.15;
+  B2.T_s : 800.;
+  B2.V_cell.Record : True;
+  B2.V_cell : 1.290594457855687;
+  B2.V_rev : 1.029306456763108;
+  B2.Win.W.spec : Fixed;
+  B2.Win.W : 13.04;
+  Graphics : TEXT CLSID {A0DFFFE6-908E-11CE-A964-0000C08C668E}
+# of PFS Objects = 7
+SIZE -10.5726 -0.219647 0.0924684 4.66404
+BLOCK
+ID: B2
+Version: 1
+ICON: "SOEC_stack"
+Flag 0
+Section 
+At -5.008278 0.383203
+Label At 0.000000 0.000000
+Scale 0.447284 Modifier 0
+STREAM
+ID: W-IN
+Version: 2
+Flag 0
+TYPE 0 TERMINAL 1
+At -10.572600 3.818897
+Label At 2.010412 0.000000
+ROUTE 0 0
+$ $ 0.0 0.0
+ROUTE 1 0
+r r -10.572600 3.818897 0
+x x -6.551773 3.818897 0
+y x -6.551773 3.244472 0
+x x -6.551776 3.244472 0
+t u -6.551776 3.044509 0
+$ C 1.000000 0.0
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 1
+$ $ 0.0 0.0
+ROUTE 1 1
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 2
+$ $ 0.0 0.0
+ROUTE 1 2
+$ $ 0.0 0.0
+STREAM
+ID: FEED
+Version: 2
+Flag 0
+TYPE 0 TERMINAL 1
+At -9.808724 4.664037
+Label At 1.931930 0.000000
+ROUTE 0 0
+$ $ 0.0 0.0
+ROUTE 1 0
+r r -9.808724 4.664037 0
+x x -5.944862 4.664037 0
+y x -5.944862 3.198777 0
+x x -5.944865 3.198777 0
+t u -5.944865 2.998819 0
+$ C 1.000000 0.0
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 1
+$ $ 0.0 0.0
+ROUTE 1 1
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 2
+$ $ 0.0 0.0
+ROUTE 1 2
+$ $ 0.0 0.0
+STREAM
+ID: CATHODE
+Version: 2
+Flag 0
+TYPE 0 TERMINAL 2
+At -1.844914 4.290225
+Label At -1.235108 0.000000
+ROUTE 0 0
+r l -1.844914 4.290225 0
+x y -4.315130 4.290225 0
+y x -4.315130 3.423287 0
+x x -4.315131 3.423287 0
+t u -4.315131 3.223324 0
+$ C 1.000000 0.0
+$ $ 0.0 0.0
+ROUTE 1 0
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 1
+$ $ 0.0 0.0
+ROUTE 1 1
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 2
+$ $ 0.0 0.0
+ROUTE 1 2
+$ $ 0.0 0.0
+STREAM
+ID: ANODE
+Version: 2
+Flag 0
+TYPE 0 TERMINAL 2
+At -0.902259 3.542602
+Label At -1.426498 0.000000
+ROUTE 0 0
+r l -0.902259 3.542602 0
+x y -3.755257 3.542602 0
+y x -3.755257 3.087955 0
+x x -3.755256 3.087955 0
+t u -3.755256 2.887955 0
+$ C 1.000000 0.0
+$ $ 0.0 0.0
+ROUTE 1 0
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 1
+$ $ 0.0 0.0
+ROUTE 1 1
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 2
+$ $ 0.0 0.0
+ROUTE 1 2
+$ $ 0.0 0.0
+STREAM
+ID: Q-OUT
+Version: 2
+Flag 0
+TYPE 0 TERMINAL 2
+At -0.219647 1.072196
+Label At -0.908061 0.000000
+ROUTE 0 0
+r l -0.219647 1.072196 0
+x y -1.225000 1.072196 0
+y x -1.225000 1.067655 0
+x 0 -2.018081 1.067655 0
+t r -2.218007 1.067655 0
+$ C 1.000000 0.0
+$ $ 0.0 0.0
+ROUTE 1 0
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 1
+$ $ 0.0 0.0
+ROUTE 1 1
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 2
+$ $ 0.0 0.0
+ROUTE 1 2
+$ $ 0.0 0.0
+LEGEND
+Version: 2
+Dim: -3.84009 -3.2 -2.7474 -3.41781
+Size: 0.0156384
+Font: 1 0 =Times New Roman
+# of PFS Objects = 0
+VIEWPORT -15.148627 9.169030 6.653298 -3.151957
+LAYOUT
+TableFormat 1
+Pages 1 1 1 1
+PAGESETUP
+PAPERSIZE 
+PAPERSOURCE 
+ORIENTATION -1
+PRINTPAGENO 1 1
+LEFTMARGIN 0.5"
+RIGHTMARGIN 0.5"
+TOPMARGIN 0.5"
+BOTTOMMARGIN 0.5"
+VISIBILITY 0.030000
+PFDFLAG 255 255
+PFDMODE 0
+SCALE 0.015638
+
+ENDTEXT;
+END
+
+Properties
+Package : "PropertiesPlus";
+DefinitionText : TEXT MM "40.0" FLAVOR "NO" VERSION "40.0" DATETIME "Fri Jun  7 13:25:49 2024" 
+MACHINE "WIN-NT/VC" 
+? SETUP MAIN ? \ "RUN-CLASS" RUN-CLASS = PROP \ \ SIMULATE INTERACTIVE = NO 
+MOLEFLOW = MOLEFLOW \ ? SETUP GLOBAL ? \ "IN-UNITS" INSET = METCBAR \ ? SETUP 
+"SIM-OPTIONS" ? ; "METCBAR_MOLE" ; ? SETUP "UNITS-SET" METCBAR ? \ 
+DESCRIPTION DESCRIPTION = "User-defined units set" \ \ MMLOCAL \ \ UNITSET 
+BASESET = MET ( 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 5 3 4 3 3 3 3 3 3 3 3 4 
+3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 
+3 3 3 3 5 3 3 3 3 3 3 5 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 
+3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 7 3 3 3 3 3 3 3 3 3 3 
+3 3 3 3 3 3 3 ) \ ? DATABANKS ? \ DATABANKS \ ? COMPONENTS MAIN ? \ 
+COMPONENTS CID = CO2 ANAME = CO2 OUTNAME = CO2 DBNAME1 = "CARBON-DIOXIDE" 
+ANAME1 = "CO2" /  CID = H2 ANAME = H2 OUTNAME = H2 DBNAME1 = "HYDROGEN" 
+ANAME1 = "H2" /  CID = O2 ANAME = O2 OUTNAME = O2 DBNAME1 = "OXYGEN" ANAME1
+ = "O2" /  CID = N2 ANAME = N2 OUTNAME = N2 DBNAME1 = "NITROGEN" ANAME1 = "N2" 
+/  CID = CH4 ANAME = CH4 OUTNAME = CH4 DBNAME1 = "METHANE" ANAME1 = "CH4" /  
+CID = H2O ANAME = H2O OUTNAME = H2O DBNAME1 = "WATER" ANAME1 = "H2O" /  CID
+ = TEG ANAME = C6H14O4 OUTNAME = TEG DBNAME1 = "TRIETHYLENE-GLYCOL" ANAME1 = 
+"C6H14O4" /  CID = EG ANAME = C2H6O2 OUTNAME = EG DBNAME1 = "ETHYLENE-GLYCOL" 
+ANAME1 = "C2H6O2" /  CID = DMPG ANAME = C12H26O6 OUTNAME = DMPG DBNAME1 = 
+"PENTAETHYLENE-GLYCOL-DIMETHYL-ET" ANAME1 = "C12H26O6" \ ? COMPONENTS "ADA/PCS" 
+"LE-PROP-DATA" ? ; "METCBAR_MOLE" ; ? COMPONENTS "COMP-LIST" GLOBAL ? ? 
+COMPONENTS "UNIFAC-GROUP" ? ? PROPERTIES MAIN ? \ GPROPERTIES GBASEOPSET = 
+UNIQUAC GOPSETNAME = UNIQUAC PARCON = -2 \ ? PROPERTIES COMPARE ? ? 
+PROPERTIES "OPTION-SETS" "PENG-ROB" ? \ PARAM BASE = "PENG-ROB" \ ? 
+PROPERTIES "OPTION-SETS" UNIQUAC ? \ PARAM BASE = UNIQUAC \ ? PROPERTIES 
+"NC-PROPS" ? ? PROPERTIES "MOLEC-STRUCT" CH4 ? ? PROPERTIES "MOLEC-STRUCT" 
+CO2 ? ? PROPERTIES "MOLEC-STRUCT" DMPG ? ? PROPERTIES "MOLEC-STRUCT" EG ? ? 
+PROPERTIES "MOLEC-STRUCT" H2 ? ? PROPERTIES "MOLEC-STRUCT" H2O ? ? PROPERTIES 
+"MOLEC-STRUCT" N2 ? ? PROPERTIES "MOLEC-STRUCT" O2 ? ? PROPERTIES 
+"MOLEC-STRUCT" TEG ? ? PROPERTIES ESTIMATION ? ; "METCBAR_MOLE" ; \ DIRECTOR 
+ALLONLY = ALL \ \ BINARY1 PROPERTY = UNIQ METHOD = ( UNIFAC ) \ \ BINARY2 1 
+COMP1 = ALL COMP2 = ALL \ ? PROPERTIES PARAMETERS SUMMARY ? ? PROPERTIES 
+PARAMETERS BINARY SCALAR "MLQKIJ-1" ? ; "ENG_MOLE" ; \ PROP-LIST PARAMNAME = 
+MLQKIJ SETNO = 1 UNITROW = 0 \ ? PROPERTIES PARAMETERS BINARY SCALAR "RKTKIJ-1" 
+? ; "ENG_MOLE" ; \ PROP-LIST PARAMNAME = RKTKIJ SETNO = 1 UNITROW = 0 \ ? 
+PROPERTIES PARAMETERS BINARY "T-DEPENDENT" "ANDKIJ-1" ? ; "ENG_MOLE" ; \ 
+PROP-LIST PARAMNAME = ANDKIJ SETNO = 1 UNITROW = 0 TUNITROW = 22 TUNITLABEL
+ = F NEL = 2 \ ? PROPERTIES PARAMETERS BINARY "T-DEPENDENT" "ANDMIJ-1" ? ; 
+"ENG_MOLE" ; \ PROP-LIST PARAMNAME = ANDMIJ SETNO = 1 UNITROW = 0 TUNITROW = 
+22 TUNITLABEL = F NEL = 2 \ ? PROPERTIES PARAMETERS BINARY "T-DEPENDENT" 
+"HENRY-1" ? ; "METCBAR_MOLE" ; \ PROP-LIST PARAMNAME = HENRY SETNO = 1 
+UNITROW = 20 UNITLABEL = bar TUNITROW = 22 TUNITLABEL = C BDBANK = ( 
+"APV140 BINARY" "APV140 HENRY-AP" ) NEL = 7 \ ? PROPERTIES PARAMETERS BINARY 
+"T-DEPENDENT" "MUKIJ-1" ? ; "ENG_MOLE" ; \ PROP-LIST PARAMNAME = MUKIJ SETNO
+ = 1 UNITROW = 0 TUNITROW = 22 TUNITLABEL = F NEL = 6 \ ? PROPERTIES 
+PARAMETERS BINARY "T-DEPENDENT" "MULIJ-1" ? ; "ENG_MOLE" ; \ PROP-LIST 
+PARAMNAME = MULIJ SETNO = 1 UNITROW = 0 TUNITROW = 22 TUNITLABEL = F NEL = 11 
+\ ? PROPERTIES PARAMETERS BINARY "T-DEPENDENT" "PRKBV-1" ? ; "METCBAR_MOLE" ; 
+\ PROP-LIST PARAMNAME = PRKBV SETNO = 1 UNITROW = 0 TUNITROW = 22 TUNITLABEL
+ = C BDBANK = ( "APV140 EOS-LIT" ) NEL = 5 \ \ BPVAL PARAMNAME2 = PRKBV CID1
+ = CO2 CID2 = H2 UNITROW2 = 0 TUNITROW2 = 22 TUNITLABEL2 = C VAL1 = 
+"APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = "APV140 EOS-LIT" VAL4 = 
+"APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  PARAMNAME2 = PRKBV CID1 = CO2 
+CID2 = N2 UNITROW2 = 0 TUNITROW2 = 22 TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" 
+VAL2 = "APV140 EOS-LIT" VAL3 = "APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 
+= "APV140 EOS-LIT" /  PARAMNAME2 = PRKBV CID1 = CO2 CID2 = CH4 UNITROW2 = 0 
+TUNITROW2 = 22 TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" 
+VAL3 = "APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  
+PARAMNAME2 = PRKBV CID1 = CO2 CID2 = H2O UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = 
+"APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  
+PARAMNAME2 = PRKBV CID1 = H2 CID2 = N2 UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = 
+"APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  
+PARAMNAME2 = PRKBV CID1 = H2 CID2 = CH4 UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = 
+"APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  
+PARAMNAME2 = PRKBV CID1 = O2 CID2 = N2 UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = 
+"APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  
+PARAMNAME2 = PRKBV CID1 = N2 CID2 = CH4 UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = 
+"APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" \ ? 
+PROPERTIES PARAMETERS BINARY "T-DEPENDENT" "PRLIJ-1" ? ; "METCBAR_MOLE" ; \ 
+PROP-LIST PARAMNAME = PRLIJ SETNO = 1 UNITROW = 0 TUNITROW = 22 TUNITLABEL = 
+C NEL = 8 \ ? PROPERTIES PARAMETERS BINARY "T-DEPENDENT" "UNIQ-1" ? ; 
+"METCBAR_MOLE" ; \ PROP-LIST PARAMNAME = UNIQ SETNO = 1 UNITROW = 0 TUNITROW
+ = 22 TUNITLABEL = C BDBANK = ( "APV140 VLE-IG" "APV140 LLE-LIT" 
+"APV140 LLE-ASPEN" "APV140 VLE-LIT" ) NEL = 12 ESTIMATE = YES \ \ BPVAL 
+PARAMNAME2 = UNIQ CID1 = H2O CID2 = EG UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 VLE-IG" VAL2 = "APV140 VLE-IG" VAL3 = 
+"APV140 VLE-IG" VAL4 = "APV140 VLE-IG" VAL5 = "APV140 VLE-IG" VAL6 = 
+"APV140 VLE-IG" VAL7 = "APV140 VLE-IG" VAL8 = "APV140 VLE-IG" VAL9 = 
+"APV140 VLE-IG" VAL10 = "APV140 VLE-IG" VAL11 = "APV140 VLE-IG" VAL12 = 
+"APV140 VLE-IG" \ ? PROPERTIES "ATTR-COMPS" ? ? POLYMERS ? ? REPORT 
+"STREAM-REPOR" ? \ OPTIONS MOLEFLOW = MOLEFLOW \ ? REPORT "PROPERTY-REP" ? 
+\ OPTIONS PCES = PCES \ 
+
+ GRAPHICS_BACKUP
+PFS V NONE
+$CONFIG
+paramdata APV140 ENRTL-RK
+paramdata APV140 VLE-IG
+paramdata APV140 VLE-RK
+paramdata APV140 VLE-HOC
+paramdata APV140 LLE-LIT
+paramdata APV140 LLE-ASPEN
+paramdata APV140 VLE-LIT
+paramdata APV140 BINARY
+paramdata APV140 EOS-LIT
+paramdata APV140 HENRY-AP
+paramdata APV140 SRK-ASPEN
+paramdata APV140 PC-SAFT
+paramdata APV140 POLYPCSF
+paramdata APV140 HYSYS
+paramdata APESV140 AP-EOS
+paramdata NISTV140 NIST-HOC
+paramdata NISTV140 NIST-IG
+paramdata NISTV140 NIST-RK
+paramdata NISTV140 NIST-EOS
+purebank APV140 PURE37
+purebank APV140 AQUEOUS
+purebank APV140 SOLIDS
+purebank APV140 INORGANIC
+purebank APESV140 AP-EOS
+purebank NISTV140 NIST-TRC
+regdbank 1
+ftn_check 1
+autoblockid 1
+autostreamid 1
+showblockid 1
+showstreamid 1
+autoplacement 1
+grid 2
+gridresolution 0.100000
+scale 0
+streamprefix 
+blockprefix B
+labelscale 1.000000
+qwformat %.0f
+wformat %.0f
+tempformat %.0f
+presformat %.0f
+flowformat %.0f
+strmqwformat %.0f
+strmwformat %.0f
+vflowformat %.0f
+mflowformat %.0f
+vfracformat %.0f
+pseudobatch 0
+partial 1
+animation 1
+runanyway 0
+globalqw 0
+globalw 0
+globaltemp 0
+globalpres 0
+globalflow 0
+globalstrmqw 0
+globalstrmw 0
+globalvflow 0
+globalmflow 0
+globalvfrac 0
+browserheight 6375
+browserwidth 9000
+browsertreewidth 2370
+polyplusenabled 1
+dynaplusenabled 1
+bfracenabled 1
+rtfenabled 1
+rspenabled 0
+pinchenabled 0
+linklimit 5000
+material_color 0
+material_style 0
+material_width 1
+heat_color 0
+heat_style 2
+heat_width 1
+heat_termid Q
+work_color 0
+work_style 1
+work_width 1
+work_termid W
+connections_color 9
+connections_style 3
+connections_width 1
+measurements_color 4
+measurements_style 3
+measurements_width 1
+power_color 10
+power_style 5
+power_width 1
+power_termid I
+displayeoconn 0
+displayeomeas 1
+displayeomeastype 2
+showeoviews 0
+eoautosave 1
+allow_system_userprops 0
+copy_estimation 1
+copy_retrieved 1
+purge_incomp_params 0
+set_default_biparams 0
+set_default_dataset1 0
+set_default_dataset0 1
+roottype 1
+exchangerfile 1
+streamformat 1
+runsettingfile 1
+usermodelfile 1
+fortranfile 0
+timeout 1000
+#
+#
+E_LINK
+
+$_SUMMARY_FILE
+ MMSUMMARY40.0                                                                  
+ IDSET RUNID (PROPERTIES) (114 *5)                                              
+ IDSET IT (PROPERTIES) (117 *6 119 *6 115 *1)                                   
+ LSET RUNID (%RUNID)                                                            
+ LSET IT (%IT)                                                                  
+ IDSET VERS (PROPERTIES) (345 *6 346 *6 347 *6 348 *6 355 *6)                   
+ LSET VERS (%VERS)                                                              
+ DSET RUN-STATUS VERS @VERS ( "40.0" "WIN-X64" "" "DTTD" "lab000000" )          
+ IDSET STRNAM (PROPERTIES) (1233 *6)                                            
+ LSET STRNAM (%STRNAM)                                                          
+ IDSET ID_STRPR (PROPERTIES) ( 454 *2 <119> 1236 *2 <125> 1237 *2 <29> 1238 *2  
+ <55> 1239 *2 <55> 1083 *6 1084 *6 )                                            
+ LSET L_STRPR (%ID_STRPR)                                                       
+ IDSET ID_GUID (PROPERTIES) ( 1270 *6 )                                         
+ LSET L_GUID (%ID_GUID)                                                         
+ IDSET STATUS (PROPERTIES) (125 *1 126 *1 127 *1 128 *1 129 *1 130 *1)          
+ LSET STATUS (%STATUS)                                                          
+ DSET RUN-STATUS STATUS @STATUS ( 8 * * * * * )                                 
+ DSET RUN-STATUS COMPSTAT @L_1 (0)                                              
+ DSET RUN-STATUS RUNID @RUNID ("_2543aha")                                      
+ DSET RUN-STATUS IT @IT ( "JUNE 7, 2024        1:25:47 P.M." "_2543aha.inm" 2)  
+
+ENDTEXT;
+TimeStamp : "31111432 523137298";
+
+Default as ComponentList; 
+Within Default
+  Components :["CH4","CO2","DMPG","EG","H2","H2O","N2","O2","TEG"];
+EndWithin
+End
+
+Options
+  AbsoluteSingularityTol: 1.e-004;
+  AbsPerturb: 1.e-005;
+  AbsTearTol: 1.e-005;
+  AbsTol: 1.e-005;
+  AssignmentWarningsEnabled: True;
+  ChangeTol: 1.e-005;
+  CheckProcDerivs: "Off";
+  Compression: True;
+  CurrentUOMSet: "Metric";
+  Decomposer.ProgID: "AspenTech.Decomposer";
+  Decomposition.MultipleGroup: True;
+  DerivAbsTol: 1.e-003;
+  DerivRelTol: 0.1;
+  EqnTol: 1.e-005;
+  EquationSensCheck: False;
+  EquationSensTol: 10000000000.;
+  EstimationPrintLevel: "Medium";
+  EstimationReturntoBestPoint: False;
+  EstimationSolver: 2;
+  Estimator: 1;
+  ExplicitEventTolerance: 1.e-005;
+  Feasopt.MaxAbsStep: 10.;
+  Feasopt.MaxEval: 100;
+  Feasopt.MaxRelStep: 10.;
+  Feasopt.OptTol: 1.e-004;
+  Homotopy.InitialStep: 0.1;
+  Homotopy.MaximumStep: 1.;
+  Homotopy.MinimumStep: 1.e-002;
+  Homotopy.StepDecrement: 0.5;
+  Homotopy.StepIncrement: 10;
+  Integration.AbsErrorTol: 1.e-005;
+  Integration.AbsTearTol: 1.e-005;
+  Integration.DiscontinuityEventTol: 1.e-005;
+  Integration.EnforceMinStep: False;
+  Integration.IncSensErrors: False;
+  Integration.InitStepSize: 5.e-003;
+  Integration.ItplToComTime: True;
+  Integration.LocateIEvents: False;
+  Integration.MaxOrder: 5;
+  Integration.MaxStepSize: 1.;
+  Integration.MinStepSize: 1.e-003;
+  Integration.ProgID: "AspenTech.UnifiedIntegrator";
+  Integration.RcvTornVars: False;
+  Integration.ReInitAfterEE: False;
+  Integration.ReInitAfterIE: False;
+  Integration.RelErrorTol: 1.e-005;
+  Integration.RelTearTol: 1.e-005;
+  Integration.RewindToLastConvStep: False;
+  Integration.ShowHIErrors: 0;
+  Integration.ShowHTIErrors: 0;
+  Integration.StepRedFact: 0.5;
+  Integration.StepSize: 1.e-002;
+  Integration.StepSizeType: "Variable";
+  Integration.TestSAndAVars: False;
+  Integration.UsePrevAfterEE: False;
+  Integrator: "ImplicitEuler";
+  KeepCompiledEvaluationFiles: False;
+  LinearSolver: "MA48";
+  ListEquivalenceVariables: True;
+  LogLikelihood.MaxIter: 100;
+  LogLikelihood.SolTol: 1.e-004;
+  MA48.DropTol: 0.;
+  MA48.EnableRefineIter: True;
+  MA48.MaxRefineIter: 10;
+  MA48.PivotSearch: 3;
+  MA48.PivotTol: 1.e-050;
+  MA48.Repivot: 0;
+  MA48.UseTranspose: 0;
+  MaxTearIter: 100;
+  Nl2sol.AbsFuncTol: 9.999999999999999e-021;
+  Nl2sol.FalseConvTol: 0.;
+  Nl2sol.MaxIter: 50;
+  Nl2sol.RelFuncTol: 1.e-004;
+  Nl2sol.SolTol: 1.e-004;
+  NLASolver: "Standard";
+  Nonlinear.AbsPert: 1.e-005;
+  Nonlinear.BestOnFail: True;
+  Nonlinear.BoundClip: 1.e-006;
+  Nonlinear.BoundFrac: 1.;
+  Nonlinear.ConvCrit: "Residual";
+  Nonlinear.CreepIter: 0;
+  Nonlinear.CreepSize: 0.1;
+  Nonlinear.Dogleg: False;
+  Nonlinear.HiResidual: 0;
+  Nonlinear.HiVarSteps: 0;
+  Nonlinear.MathsPrint: 0;
+  Nonlinear.MaxDivSteps: 10;
+  Nonlinear.MaxFastNewtonSteps: 5;
+  Nonlinear.MaxIter: 100;
+  Nonlinear.MaxStepRed: 10;
+  Nonlinear.MaxVarStep: 50.;
+  Nonlinear.Method: "Mixed Newton";
+  Nonlinear.RangeFrac: 0.;
+  Nonlinear.SingPert: 1.e-002;
+  OptimizationObjFun: "Minimize";
+  OptimizationPrintLevel: "Medium";
+  Optimizer: 1;
+  PrintLevel: 2;
+  PropInfo: -1;
+  RelativeSingularityCheck: True;
+  RelativeSingularityTol: 1.e-002;
+  RelPerturb: 1.e-005;
+  RelTearTol: 1.e-005;
+  RelTol: 1.e-005;
+  RunMode: "SteadyState";
+  SaveFreeVariableValues: True;
+  Scaling: False;
+  SensErrorCheck: True;
+  SnapshotSettings.EnableDynInitialization: True;
+  SnapshotSettings.EnableFileSaved: False;
+  SnapshotSettings.EnableInitialization: True;
+  SnapshotSettings.EnableInitialSpec: True;
+  SnapshotSettings.EnableMaximum: True;
+  SnapshotSettings.EnableonReinitialization: False;
+  SnapshotSettings.EnableProblemEdit: True;
+  SnapshotSettings.EnableRegularSnapshot: False;
+  SnapshotSettings.EnableSteadyState: True;
+  SnapshotSettings.Interval: 2.;
+  SnapshotSettings.Maximum: 10;
+  SnapshotSettings.SaveConvergedOnly: True;
+  SnapshotSettings.TakeAutoSnapshots: True;
+  SyncSteps: "Full";
+  Tearing: "update";
+  TearUpdate: "Direct";
+  TimeSettings.CommunicationInterval: 1.e-002;
+  TimeSettings.CommunicationUnits: "Hours";
+  TimeSettings.DisplayUpdateInterval: 2000;
+  TimeSettings.EnablePauseAt: False;
+  TimeSettings.EnableStepFor: False;
+  TimeSettings.PauseAt: 0.;
+  TimeSettings.RealTimeSyncFactor: 0.;
+  TimeSettings.RecordHistory: False;
+  TimeSettings.StepFor: 0;
+  TimeSettings.TimeDisplayUnits: "Hours";
+  UseCompiledEvaluation: False;
+  UseSavedSnapshotOnLoad: False;
+  WatchGroup: 0;
+  WatchSubGroup: 0;
+  Wegstein.MaxAcceleration: 0.;
+  Wegstein.MinAcceleration: -5.;
+  OpenLASolver: "";
+  OpenNLASolver: "";
+  OpenOPTSolver: "";
+  OpenESTSolver: "";
+End
+Optimization
+  IsDynamic : FALSE;
+  ElementSizeBoundsAutomatic : TRUE;
+  EndTime : 1.000000000000000;
+  Control.FinalTime_Initial : 1.000000000000000;
+  Control.FinalTime_Upper : 2.000000000000000;
+  Control.FinalTime_Lower : 0.5000000000000000;
+  Control.FinalTime_IsFixed : TRUE;
+  Control.FinalTime_IsObjective : FALSE;
+  Control.Elements : 5;
+  Control.FixedInterval : TRUE;
+  Control.MovingElementsVarying : FALSE;
+  Control.PiecewiseLinear : FALSE;
+  Control(0) : 0.2000000000000000, 0.05000000000000000, 0.4000000000000000 ;
+  Control(1) : 0.2000000000000000, 0.05000000000000000, 0.4000000000000000 ;
+  Control(2) : 0.2000000000000000, 0.05000000000000000, 0.4000000000000000 ;
+  Control(3) : 0.2000000000000000, 0.05000000000000000, 0.4000000000000000 ;
+  Control(4) : 0.2000000000000000, 0.05000000000000000, 0.4000000000000000 ;
+End
+Estimation
+  CalcHeteroParams : TRUE;
+  ExperimentTimeUnit: "";
+End
+Homotopy
+ Enabled: FALSE;
+End
+SimulationAccessExtension
+  ENABLED: false;
+End
+SpecAnalysis
+End
+OnLineLinks
+  Protocol: "OPC", 1;
+  //Server: "";
+  IO: Synchronous, Cached;
+  Bounds: Clip;
+  Quality: UseLast;
+  Update: 1000;
+  PrintLevel: 2;
+  Enabled: OFF;
+  Input Events : Before SS Run, After DYN Step, After INI Step, Before INI Run;
+  Output Events: After SS Run, After DYN Step, After INI Step, After INI Run;
+End

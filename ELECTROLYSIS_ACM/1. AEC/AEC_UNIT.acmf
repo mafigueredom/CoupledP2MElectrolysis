@@ -1,0 +1,1340 @@
+Version "40.0-0";
+Libraries "Modeler.acml", "SystemLibrary.acml";
+Model AlgebraicAEC
+
+// Ports*******************************************************************************************************************************************************************
+
+FlowIn    as input    MoleFractionPort   (Description:"Water flow fed (kmol/h)");
+Cathode   as output   MoleFractionPort   (Description:"Chatode output (kmol/h)");
+Anode     as output   MoleFractionPort   (Description:"Anode output (kmol/h)");
+Qout      as output   HeatPort           (Description:"Heat flow out (GJ/hr)");
+Win       as input    WorkPort           (Description:"Power in (kW)");
+
+// Parameters**************************************************************************************************************************************************************
+
+r1    as RealParameter    (description:"Polarization curve parameter (ohm m2)",                 value:4.45453e-05);
+r2    as RealParameter    (description:"Polarization curve parameter (ohm m2 / °C)",            value:6.88874e-09);
+d1    as RealParameter    (description:"Polarization curve parameter (ohm m2)",                 value:-3.12996e-06);
+d2    as RealParameter    (description:"Polarization curve parameter (ohm m2 / bar)",           value:4.47137e-07);
+s     as RealParameter    (description:"Polarization curve parameter (V)",                      value:0.33824);
+t1    as RealParameter    (description:"Polarization curve parameter (m2/A)",                   value:-0.01539);
+t2    as RealParameter    (description:"Polarization curve parameter (m2°C/A)",                 value:2.00181);
+t3    as RealParameter    (description:"Polarization curve parameter (m2°C2/A)",                value:15.24178);
+
+Vtn   as RealParameter    (description:"Thermoneutral Cell Volage (V)",                         value:1.482);
+
+f11   as RealParameter    (description:"Faraday efficiency parameter (A2/m4)",                  value:478645.74);
+f12   as RealParameter    (description:"Faraday efficiency parameter (A2/m4°C)",                value:-2953.15);
+f21   as RealParameter    (description:"Faraday efficiency parameter (adimensional)",           value:1.03960);
+f22   as RealParameter    (description:"Faraday efficiency parameter (°C-1)",                   value:-0.00104);
+C1    as RealParameter    (description:"Gas purity parameter (adimensional)",                   value:0.09901);
+C2    as RealParameter    (description:"Gas purity parameter (°C-1)",                           value:-0.00207);
+C3    as RealParameter    (description:"Gas purity parameter (°C-2)",                           value:1.31064e-05);
+C4    as RealParameter    (description:"Gas purity parameter (adimensional)",                   value:-0.08483);
+C5    as RealParameter    (description:"Gas purity parameter (°C-1)",                           value:0.00179);
+C6    as RealParameter    (description:"Gas purity parameter (°C-2)",                           value:-1.13390e-05);
+C7    as RealParameter    (description:"Gas purity parameter (A/m2)",                           value:1481.45);
+C8    as RealParameter    (description:"Gas purity parameter (A/m2°C)",                         value:-23.60345);
+C9    as RealParameter    (description:"Gas purity parameter (A/m2°C2)",                        value:-0.25774);
+E1    as RealParameter    (description:"Gas purity parameter (adimensional)",                   value:3.71417);
+E2    as RealParameter    (description:"Gas purity parameter (bar-1)",                          value:-0.93063);
+E3    as RealParameter    (description:"Gas purity parameter (bar-2)",                          value:0.05817);
+E4    as RealParameter    (description:"Gas purity parameter (adimensional)",                   value:-3.72068);
+E5    as RealParameter    (description:"Gas purity parameter (bar-1)",                          value:0.93219);
+E6    as RealParameter    (description:"Gas purity parameter (bar-2)",                          value:-0.05826);
+E7    as RealParameter    (description:"Gas purity parameter (A/m2)",                           value:-18.38215);
+E8    as RealParameter    (description:"Gas purity parameter (A/m2bar)",                        value:5.87316);
+E9    as RealParameter    (description:"Gas purity parameter (A/m2bar2)",                       value:-0.46425);
+
+FC    as RealParameter    (description:"Faraday Constant (C/mol)",                              value:96485);
+ne    as IntegerParameter (description:"Transfered electrons per mol",                          value:2);
+
+// Variables***************************************************************************************************************************************************************
+
+I     as current          (description:"Current Density (A)",                                                 spec:Free);
+Icell as notype           (description:"Cell Current Density (A/m2)"                                         );
+nF    as fraction         (description:"Faraday Efficiency (dimensionless)",                                  spec:Free);
+HTO   as fraction         (description:"Hydrogen to oxygen (dimensionless)",                                  spec:Free);
+nH2   as notype           (description:"Reactant consupmtion (mol/s)",                                        spec:Free);
+Qgen  as enthflow         (description:"Heat generated in stack (GJ/hr)",                                     spec:Free);
+
+Vrev  as voltage          (description:"Reversible Voltage (V)",                                              spec:Free);
+Vcell as voltage          (description:"Cell Voltage (V)",                                                    spec:Free);
+
+RhoC  as dens_mol_liq     (description:"Molar density",                                                       spec:Free);
+RhoA  as dens_mol_liq     (description:"Molar density",                                                       spec:Free);
+
+Acell as area             (description:"Cells area (m2)",                                        value:0.10, spec:Fixed);
+N     as notype           (description:"Number of Cells",                                        value:12.0, spec:Fixed);
+
+P_s   as pressure         (description:"Pression (bar)",                                          value:7.0, spec:Fixed);
+T_s   as temperature      (description:"Temperature (°C)",                                       value:75.0, spec:Fixed); 
+
+Fcat(Componentlist)  as flow_mol (Description:"Inlet vapor molar flow rate");
+Fan (Componentlist)  as flow_mol (Description:"Inlet vapor molar flow rate");
+
+Prod(Componentlist)  as flow_mol;
+P_z(componentlist)   as molefraction;
+P_H as enth_mol;
+
+Qin as enthflow;
+MW(componentlist) as hidden molweight;
+call(MW) = pMolWeights() componentlist;
+
+aaMBzero as realvariable;
+aaHBone as realvariable;
+
+// Equations****************************************************************************************************************************************************************
+
+nF    = (((I/Acell)^2)/(f11+(f12*T_s)+((I/Acell)^2)))*(f21+(f22*T_s));
+HTO   = C1+(C2*T_s)+(C3*(T_s^2))+((C4+(C5*T_s)+(C6*(T_s^2)))*EXP((C7+(C8*T_s)+(C9*(T_s^2)))/(I/Acell)))+E1+(E2*P_s)+(E3*(P_s^2))+((E4+(E5*P_s)+(E6*(P_s^2)))*EXP((E7+(E8*P_s)+(E9*(P_s^2)))/(I/Acell)));
+nH2   = nF*I*N/(ne*FC);
+//Vrev  = (228588+(44.3735*(T_s-25)))/(ne*FC);
+//Vrev = 1.5184-(1.5421*(10^(-3))*(T+273.15))+(9.523*(10^(-5))*(T+273.15)*LOGe((T+273.15)))+(9.84*(10^(-8))*((T*273.15)^2));
+Vrev=1.229-0.840e-3*(T_s-25);
+Vcell = Vrev+((r1+d1+(r2*T_s)+(d2*P_s))*(I/Acell))+(s*LOG10(((t1+(t2/T_s)+(t3/(T_s^2)))*(I/Acell))+1));
+Icell = I/(Acell); //Conversion to cm2 for comparison purposes;
+
+// Inlet********************************************************************************************************************************************************************
+
+//call(FlowIn.h) = pEnth_Mol(FlowIn.T, FlowIn.P, FlowIn.Z);
+
+// Output Streams**********************************************************************************************************************************************************
+
+// Productos
+
+Prod("O2")  = (FlowIn.F*FlowIn.z("O2"))+(nH2*3600/(1000*2));
+Prod("H2")  = (nH2*3600/1000)+(FlowIn.z("H2")*FlowIn.F);
+Prod("H2O") = (FlowIn.F*FlowIn.z("H2O"))-(nH2*3600/1000);
+Prod("N2")  =  FlowIn.z("N2")*FlowIn.F;
+Prod("CO2") =  FlowIn.z("CO2")*FlowIn.F;
+Prod("CH4") =  FlowIn.z("CH4")*FlowIn.F;
+Prod("KOH") =  FlowIn.z("KOH")*FlowIn.F;
+Prod("TEG") =  FlowIn.z("TEG")*FlowIn.F;
+Prod("EG")  =  FlowIn.z("EG")*FlowIn.F;
+//Prod("DMPG")  =  FlowIn.z("DMPG")*FlowIn.F;
+
+P_z = Prod/SIGMA(Prod);
+
+SIGMA(Prod)*P_H = Qin - Qout.Q;
+call(P_H) = pEnth_Mol(T_s, Cathode.P, P_z);
+Qin = FlowIn.F*FlowIn.h + (Win.W*0.0036);
+
+// Cathode
+
+Cathode.F = SIGMA(Fcat);
+Cathode.z = Fcat/Cathode.F;
+
+Cathode.T = T_s;
+Cathode.P = P_s;
+
+call (Cathode.h) = pEnth_Mol_liq(Cathode.T, Cathode.P, Cathode.Z);
+call (RhoC)      = pDens_Mol_liq(Cathode.T, Cathode.P, Cathode.Z);
+
+Cathode.V = 1/RhoC;
+
+// Anode
+
+Anode.F = SIGMA(Fan);
+Anode.z = Fan/Anode.F;
+Anode.T = T_s;
+Anode.P = P_s;
+
+call (Anode.h)   = pEnth_Mol_liq(Anode.T, Anode.P, Anode.Z);
+call (RhoA)      = pDens_Mol_liq(Anode.T, Anode.P, Anode.Z);
+
+Anode.V = 1/RhoA;
+
+// Heat
+
+Win.W  = (Vcell*N)*I/1000;
+//Qout.Q = Qgen*0.1;
+//Qgen   = N*I*(Vcell-Vtn)*3600*(1e-09);
+
+// Mass Balances************************************************************************************************************************************************************
+
+Fcat("H2")   = (nH2*(1-HTO)*3600/1000)+(FlowIn.z("H2")*FlowIn.F);
+Fcat("H2O")  = (FlowIn.F*FlowIn.z("H2O")-(nH2*3600/1000))/2;
+Fcat("O2")   =  0;
+Fcat("N2")   =  FlowIn.z("N2")*FlowIn.F/2;
+Fcat("CO2")  =  FlowIn.z("CO2")*FlowIn.F/2;
+Fcat("CH4")  =  FlowIn.z("CH4")*FlowIn.F/2;
+Fcat("KOH")  =  FlowIn.z("KOH")*FlowIn.F/2;
+Fcat("TEG")  =  FlowIn.z("TEG")*FlowIn.F/2;
+Fcat("EG")   =  FlowIn.z("EG")*FlowIn.F/2;
+//Fcat("DMPG")   =  FlowIn.z("DMPG")*FlowIn.F/2;
+
+Fan("H2")   =  nH2*HTO*3600/1000;
+Fan("H2O")  = (FlowIn.F*FlowIn.z("H2O")-(nH2*3600/1000))/2;
+Fan("O2")   = (nH2*3600/(1000*2))+(FlowIn.z("O2")*FlowIn.F);
+Fan("N2")   =  FlowIn.z("N2")*FlowIn.F/2;
+Fan("CO2")  =  FlowIn.z("CO2")*FlowIn.F/2;
+Fan("CH4")  =  FlowIn.z("CH4")*FlowIn.F/2;
+Fan("KOH")  =  FlowIn.z("KOH")*FlowIn.F/2;
+Fan("TEG")  =  FlowIn.z("TEG")*FlowIn.F/2;
+Fan("EG")   =  FlowIn.z("EG")*FlowIn.F/2;
+//Fan("DMPG")   =  FlowIn.z("DMPG")*FlowIn.F/2;
+
+// Checks
+
+aaMBzero = - sigma(FlowIn.F*FlowIn.z*MW) + sigma(Fan*MW) + sigma(Fcat*MW);
+aaHBone = (Anode.F*Anode.h + Cathode.F*Cathode.h + Qout.Q)/(FlowIn.F*FlowIn.h+(Win.W*0.0036));
+
+//SYSTEM SECTION - WARNING: DO NOT EDIT
+  Current_Icon : "System";
+TYPE AlgebraicAEC_T0 ROLE "ICON" text
+Name = AEC_alg
+lines = 43
+
+sub main
+call Path.Begin
+call Path.Shift(1.750000,0.000000)
+'' <<Path:0
+call Path.Box(-0.5,2,1,-2,2,208,1)
+call Path.Box(-3,1.5,-2.5,-1.5,3,25606,1)
+call Path.Box(-4.5,2.05,-3,-2,2,208,1)
+call Path.Box(-3.55,1.5,-3,-1.5,3,25600,1)
+call Path.Box(-2.5,1.5,-2,-1.5,3,25600,1)
+call Path.Box(-1.5,1.5,-1,-1.5,3,25600,1)
+call Path.Box(-0.5,1.5,0,-1.5,3,25600,1)
+call Path.Box(-2,1.5,-1.5,-1.5,3,25606,1)
+call Path.Box(-1,1.5,-0.5,-1.5,3,25606,1)
+'' >>
+call Path.End
+end sub
+
+sub LabPos
+call Label.at(0,0)
+end sub
+
+sub ports
+call Port.name("Win")
+call Port.at(0.021114,1.50004)
+call Port.direction(270)
+call Port.name("FlowIn")
+call Port.at(-0.0366579,-1.5041)
+call Port.direction(90)
+call Port.name("Qout")
+call Port.at(0.964721,-1.5041)
+call Port.IOtype(1)
+call Port.direction(270)
+call Port.name("Anode")
+call Port.at(2.00462,2.00073)
+call Port.IOtype(1)
+call Port.direction(90)
+call Port.name("Cathode")
+call Port.at(-2.02016,2.0585)
+call Port.IOtype(1)
+call Port.direction(90)
+end sub
+
+
+
+endtext
+
+AlgebraicAEC_T0_I0 as AlgebraicAEC_T0;
+SystemData : Text
+<FORMLIST DEFAULTFORM="AllVariables">
+</FORMLIST>
+<EXPORTDATA>AS::0::1
+DISPLAY::AlgebraicAEC
+DESCRIPTION::
+COMPILED::1
+CATEGORY::ACM Models
+GUID400::{2C5A97DC-FAA6-4696-B28B-B5BD823A29D1}
+PORT::Win::1::Work::Power in (kW)::0
+PORT::Qout::1::Heat::Heat flow out (GJ/hr)::0
+PORT::Anode::1::Mole Fraction::Anode output (kmol/h)::0
+PORT::Cathode::1::Mole Fraction::Chatode output (kmol/h)::0
+PORT::FlowIn::1::Mole Fraction::Water flow fed (kmol/h)::0
+QUERY::AllVariables::1::0::3</EXPORTDATA>
+EndText;
+TYPE PreSolve ROLE "SCRIPT" TEXT ' Presolve script for model AlgebraicAEC
+' Created from block B1 at 7:34:47 PM Sunday, July 4, 2021
+'
+' Initialize values if:
+'   Aspen Plus EO mode & previously failed to converge,
+'   or Aspen Plus SM mode or HYSYS, and not previously solved,
+'   or running manually in ACM
+
+If (SolutionMode = "Sequential Modular" and SMStatus <> "Converged") _
+    or (SolutionMode = "Equation Oriented" and EOStatus = "Not converged") _
+    or (SolutionMode = "") Then
+
+  Application.Msg "    PreSolve: Performing Initialization "
+  DisableIncrementalUpdate
+
+    If aaHBone.spec <> "Fixed" Then aaHBone.value = 1.000000e+00
+    If aaMBzero.spec <> "Fixed" Then aaMBzero.value = 1.000000e+00
+    If Anode.F.spec <> "Fixed" Then Anode.F.value = 1.000000e+01
+    If Anode.h.spec <> "Fixed" Then Anode.h.value = 5.000000e-02
+    If Anode.P.spec <> "Fixed" Then Anode.P.value = 1.000000e+00
+    If Anode.T.spec <> "Fixed" Then Anode.T.value = 2.500000e+01
+    If Anode.V.spec <> "Fixed" Then Anode.V.value = 5.000000e-02
+    If Anode.z("CH4").spec <> "Fixed" Then Anode.z("CH4").value = 1.250000e-01
+    If Anode.z("CO2").spec <> "Fixed" Then Anode.z("CO2").value = 1.250000e-01
+    If Anode.z("H2").spec <> "Fixed" Then Anode.z("H2").value = 1.250000e-01
+    If Anode.z("H2O").spec <> "Fixed" Then Anode.z("H2O").value = 1.250000e-01
+    If Anode.z("KOH").spec <> "Fixed" Then Anode.z("KOH").value = 1.250000e-01
+    If Anode.z("N2").spec <> "Fixed" Then Anode.z("N2").value = 1.250000e-01
+    If Anode.z("O2").spec <> "Fixed" Then Anode.z("O2").value = 1.250000e-01
+    If Anode.z("TEG").spec <> "Fixed" Then Anode.z("TEG").value = 1.250000e-01
+    If Cathode.F.spec <> "Fixed" Then Cathode.F.value = 1.000000e+01
+    If Cathode.h.spec <> "Fixed" Then Cathode.h.value = 5.000000e-02
+    If Cathode.P.spec <> "Fixed" Then Cathode.P.value = 1.000000e+00
+    If Cathode.T.spec <> "Fixed" Then Cathode.T.value = 2.500000e+01
+    If Cathode.V.spec <> "Fixed" Then Cathode.V.value = 5.000000e-02
+    If Cathode.z("CH4").spec <> "Fixed" Then Cathode.z("CH4").value = 1.250000e-01
+    If Cathode.z("CO2").spec <> "Fixed" Then Cathode.z("CO2").value = 1.250000e-01
+    If Cathode.z("H2").spec <> "Fixed" Then Cathode.z("H2").value = 1.250000e-01
+    If Cathode.z("H2O").spec <> "Fixed" Then Cathode.z("H2O").value = 1.250000e-01
+    If Cathode.z("KOH").spec <> "Fixed" Then Cathode.z("KOH").value = 1.250000e-01
+    If Cathode.z("N2").spec <> "Fixed" Then Cathode.z("N2").value = 1.250000e-01
+    If Cathode.z("O2").spec <> "Fixed" Then Cathode.z("O2").value = 1.250000e-01
+    If Cathode.z("TEG").spec <> "Fixed" Then Cathode.z("TEG").value = 1.250000e-01
+    If Fan("CH4").spec <> "Fixed" Then Fan("CH4").value = 1.000000e+01
+    If Fan("CO2").spec <> "Fixed" Then Fan("CO2").value = 1.000000e+01
+    If Fan("H2").spec <> "Fixed" Then Fan("H2").value = 1.000000e+01
+    If Fan("H2O").spec <> "Fixed" Then Fan("H2O").value = 1.000000e+01
+    If Fan("KOH").spec <> "Fixed" Then Fan("KOH").value = 1.000000e+01
+    If Fan("N2").spec <> "Fixed" Then Fan("N2").value = 1.000000e+01
+    If Fan("O2").spec <> "Fixed" Then Fan("O2").value = 1.000000e+01
+    If Fan("TEG").spec <> "Fixed" Then Fan("TEG").value = 1.000000e+01
+    If Fcat("CH4").spec <> "Fixed" Then Fcat("CH4").value = 1.000000e+01
+    If Fcat("CO2").spec <> "Fixed" Then Fcat("CO2").value = 1.000000e+01
+    If Fcat("H2").spec <> "Fixed" Then Fcat("H2").value = 1.000000e+01
+    If Fcat("H2O").spec <> "Fixed" Then Fcat("H2O").value = 1.000000e+01
+    If Fcat("KOH").spec <> "Fixed" Then Fcat("KOH").value = 1.000000e+01
+    If Fcat("N2").spec <> "Fixed" Then Fcat("N2").value = 1.000000e+01
+    If Fcat("O2").spec <> "Fixed" Then Fcat("O2").value = 1.000000e+01
+    If Fcat("TEG").spec <> "Fixed" Then Fcat("TEG").value = 1.000000e+01
+    If FlowIn.h.spec <> "Fixed" Then FlowIn.h.value = 5.000000e-02
+    If HTO.spec <> "Fixed" Then HTO.value = 5.000000e-01
+    If I.spec <> "Fixed" Then I.value = 1.000000e+01
+    If nF.spec <> "Fixed" Then nF.value = 5.000000e-01
+    If nH2.spec <> "Fixed" Then nH2.value = 1.000000e+00
+    If P_H.spec <> "Fixed" Then P_H.value = 5.000000e-02
+    If P_z("CH4").spec <> "Fixed" Then P_z("CH4").value = 5.000000e-01
+    If P_z("CO2").spec <> "Fixed" Then P_z("CO2").value = 5.000000e-01
+    If P_z("H2").spec <> "Fixed" Then P_z("H2").value = 5.000000e-01
+    If P_z("H2O").spec <> "Fixed" Then P_z("H2O").value = 5.000000e-01
+    If P_z("KOH").spec <> "Fixed" Then P_z("KOH").value = 5.000000e-01
+    If P_z("N2").spec <> "Fixed" Then P_z("N2").value = 5.000000e-01
+    If P_z("O2").spec <> "Fixed" Then P_z("O2").value = 5.000000e-01
+    If P_z("TEG").spec <> "Fixed" Then P_z("TEG").value = 5.000000e-01
+    If Prod("CH4").spec <> "Fixed" Then Prod("CH4").value = 1.000000e+01
+    If Prod("CO2").spec <> "Fixed" Then Prod("CO2").value = 1.000000e+01
+    If Prod("H2").spec <> "Fixed" Then Prod("H2").value = 1.000000e+01
+    If Prod("H2O").spec <> "Fixed" Then Prod("H2O").value = 1.000000e+01
+    If Prod("KOH").spec <> "Fixed" Then Prod("KOH").value = 1.000000e+01
+    If Prod("N2").spec <> "Fixed" Then Prod("N2").value = 1.000000e+01
+    If Prod("O2").spec <> "Fixed" Then Prod("O2").value = 1.000000e+01
+    If Prod("TEG").spec <> "Fixed" Then Prod("TEG").value = 1.000000e+01
+    If Qgen.spec <> "Fixed" Then Qgen.value = 1.000000e+00
+    If Qin.spec <> "Fixed" Then Qin.value = 1.000000e+00
+    If Qout.Q.spec <> "Fixed" Then Qout.Q.value = 1.000000e+00
+    If RhoA.spec <> "Fixed" Then RhoA.value = 2.000000e+01
+    If RhoC.spec <> "Fixed" Then RhoC.value = 2.000000e+01
+    If T_s.spec <> "Fixed" Then T_s.value = 2.500000e+01
+    If Vcell.spec <> "Fixed" Then Vcell.value = 1.000000e+02
+    If Vrev.spec <> "Fixed" Then Vrev.value = 1.000000e+02
+    If Win.W.spec <> "Fixed" Then Win.W.value = 1.000000e+01
+  EnableIncrementalUpdate
+
+End If
+
+ENDTEXT
+
+//SYSTEM SECTION END
+End
+SystemData : Text
+globaldatasection
+EndText;
+SystemData : Text
+<FORMLIST DEFAULTFORM="AllGlobals">
+  <FORM NAME="AllGlobals" CLSID="{6BA76840-806B-11D0-BE51-0000C09984EF}">
+    { Version : 1
+SizeX : 5250
+SizeY : 3750
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}
+  </FORM>
+</FORMLIST>
+EndText;
+
+FLOWSHEET
+  B1 as AlgebraicAEC;
+  Streams("W-IN") as Connection;
+  FEED as Connection;
+  CATHODE as Connection;
+  ANODE as Connection;
+  Streams("Q-OUT") as Connection;
+  Connect B1.Win with Streams("W-IN");
+  Connect B1.FlowIn with FEED;
+  Connect B1.Cathode with CATHODE;
+  Connect B1.Anode with ANODE;
+  Connect B1.Qout with Streams("Q-OUT");
+
+CONSTRAINTS
+  // Flowsheet variables and equations...
+END
+Task PolarizationTask // <Trigger>
+Runs At 0  
+// For event driven tasks, <Trigger> can be one of:
+//   Runs At <time>              e.g. Runs At 2.5 or
+//   Runs When <condition>       e.g. Runs When b1.y >= 0.6 or
+//   Runs Once When <condition> e.g. Runs Once When b1.y >= 0.6
+ Ramp (BLOCKS("B1").Win.W, 12, 2);
+// SRamp(<variable>, <final value>, <duration>, <type>);
+// Wait For <condition> e.g. when b1.y < 0.6;
+// (Use Wait For to stop the task firing again once trigger condition has been met)
+End
+
+//SYSTEM SECTION - WARNING: DO NOT EDIT
+SystemData : Text
+<FORMLIST DEFAULTFORM="AllVariables">
+  <FORM NAME="PolarizationCurve" CLSID="{F6AD2450-A109-11D0-8B2F-00A024E1AC0C}">
+    { Version : 2
+SizeX : 21480
+SizeY : 4455
+Plot3d: 0
+YAxisIsTime: 1
+MaxIntervals: 3
+PhasePlot: 1
+PhaseXVariable: B1.Icell
+XProfileName: -
+YProfileName: -
+VariablesPaths : [ 8 B1.Vcell ]
+HistoryVariablesPaths : [ 8 B1.Vcell ]
+ProfileNames : [ ]
+UnusedVariablesPaths : [ ]
+UnusedProfileDimensions : [ ]
+PlotInputFile : { 
+Type:0
+Title:PolarizationCurve
+Xlab:
+Ylab:Y Label
+Nvars:1
+MultiY:0
+Subst:UOM
+NYaxes:1
+RunPlot:0
+PhasePlot:1
+SizeToData:0
+CommunicationIntervals:1
+UseVar:1
+IgnoreLegend:0
+TimeWin:1
+TimeScroll:0.2
+AlwaysShow:0
+PhaseX:B1.Icell
+Var:0
+AxisMap:0
+Label:B1.Icell $UOM
+SubstValue:
+Var:1
+AxisMap:1
+Label:Y Label
+Legend:B1.Vcell $UOM
+SubstValue:V
+Axis:0
+Range:0.00231553 4919.74
+AxisInterval:0.005 0
+AxisRange:0.00208398 0.00252393
+AxisResetRange:1
+AxisScale:0 0
+Multiplier:0
+MultiplierType:0
+AxisFlag:0
+Axis:1
+Range:1.18701 2.03263
+AxisInterval:0.25 0
+AxisRange:1.06831 1.29384
+AxisResetRange:1
+AxisScale:0 0
+Multiplier:0
+MultiplierType:0
+AxisFlag:0
+Attrib:0 4 1 1
+Attrib2:0 0 0 0 0
+Font:0 10 0:Arial
+Font:1 10 0:Arial
+Font:2 10 0:Arial
+Font:3 10 0:Arial
+Grid:3
+Line:0
+Square:0 0 0 0
+Marker:4 1
+LegendBox:0 1.000000 0.030000
+LegendBox2:90 1.250000 5 } 
+DisplayAs : Plot
+ColumnWidths : [ 585 795 1140 ]
+ProfileDimensions : [ ]
+}
+  </FORM>
+  <FORM NAME="AllVariables" MODEL="B1">
+    { Version : 1
+SizeX : 7155
+SizeY : 5895
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}
+  </FORM>
+  <FORM NAME="AllVariables" MODEL="Streams("W-IN")">
+    { Version : 1
+SizeX : 5250
+SizeY : 3660
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}
+  </FORM>
+  <FORM NAME="AllVariables" MODEL="FEED">
+    { Version : 1
+SizeX : 12450
+SizeY : 4395
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}  </FORM>
+  <FORM NAME="AllVariables" MODEL="CATHODE">
+    { Version : 1
+SizeX : 5256
+SizeY : 3756
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}  </FORM>
+  <FORM NAME="AllVariables" MODEL="ANODE">
+    { Version : 1
+SizeX : 12765
+SizeY : 5895
+ShowAllVariables : True
+ShowAllAttributes : False
+ExpandAll : True
+ShowRegistryAttributes : True
+VariablesPaths : [ ]
+AttributesPaths : [ ]
+ColumnWidths : [ ]
+}  </FORM>
+</FORMLIST>
+EndText;
+
+//SYSTEM SECTION END
+  ActiveTasks : ["PolarizationTask"];
+  B1.aaHBone : 1.000108594784639;
+  B1.aaMBzero : -1.4210854715202e-014;
+  B1.Anode.F : 5.000775201689621;
+  B1.Anode.h : -0.303974339676355;
+  B1.Anode.P : 7.;
+  B1.Anode.T : 75.;
+  B1.Anode.V : 3.087047033444633e-002;
+  B1.Anode.z("CH4") : 0.;
+  B1.Anode.z("CO2") : 0.;
+  B1.Anode.z("EG") : 0.;
+  B1.Anode.z("H2") : 1.550163041440938e-004;
+  B1.Anode.z("H2O") : 0.8420899389336812;
+  B1.Anode.z("KOH") : 0.1472771660983996;
+  B1.Anode.z("N2") : 0.;
+  B1.Anode.z("O2") : 1.04778786637752e-002;
+  B1.Anode.z("TEG") : 0.;
+  B1.Cathode.F : 5.051622314098498;
+  B1.Cathode.h : -0.3008908768898788;
+  B1.Cathode.P : 7.;
+  B1.Cathode.T : 75.;
+  B1.Cathode.V : 3.105221390481977e-002;
+  B1.Cathode.z("CH4") : 0.;
+  B1.Cathode.z("CO2") : 0.;
+  B1.Cathode.z("EG") : 0.;
+  B1.Cathode.z("H2") : 2.05913711316681e-002;
+  B1.Cathode.z("H2O") : 0.8336138813187155;
+  B1.Cathode.z("KOH") : 0.1457947475496165;
+  B1.Cathode.z("N2") : 0.;
+  B1.Cathode.z("O2") : 0.;
+  B1.Cathode.z("TEG") : 0.;
+  B1.Fan("CH4") : 0.;
+  B1.Fan("CO2") : 0.;
+  B1.Fan("EG") : 0.;
+  B1.Fan("H2") : 7.752016896213603e-004;
+  B1.Fan("H2O") : 4.211102484211881;
+  B1.Fan("KOH") : 0.7364999999999999;
+  B1.Fan("N2") : 0.;
+  B1.Fan("O2") : 5.239751578811979e-002;
+  B1.Fan("TEG") : 0.;
+  B1.Fcat("CH4") : 0.;
+  B1.Fcat("CO2") : 0.;
+  B1.Fcat("EG") : 0.;
+  B1.Fcat("H2") : 0.1040198298866182;
+  B1.Fcat("H2O") : 4.211102484211881;
+  B1.Fcat("KOH") : 0.7364999999999999;
+  B1.Fcat("N2") : 0.;
+  B1.Fcat("O2") : 0.;
+  B1.Fcat("TEG") : 0.;
+  B1.FlowIn.F.spec : Fixed;
+  B1.FlowIn.h.spec : Fixed;
+  B1.FlowIn.h : -0.3105216971795156;
+  B1.FlowIn.P.spec : Fixed;
+  B1.FlowIn.T.spec : Fixed;
+  B1.FlowIn.z("CH4").spec : Fixed;
+  B1.FlowIn.z("CH4") : 0.;
+  B1.FlowIn.z("CO2").spec : Fixed;
+  B1.FlowIn.z("CO2") : 0.;
+  B1.FlowIn.z("EG").spec : Fixed;
+  B1.FlowIn.z("EG") : 0.;
+  B1.FlowIn.z("H2").spec : Fixed;
+  B1.FlowIn.z("H2") : 0.;
+  B1.FlowIn.z("H2O").spec : Fixed;
+  B1.FlowIn.z("H2O") : 0.8527;
+  B1.FlowIn.z("KOH").spec : Fixed;
+  B1.FlowIn.z("KOH") : 0.1473;
+  B1.FlowIn.z("N2").spec : Fixed;
+  B1.FlowIn.z("N2") : 0.;
+  B1.FlowIn.z("O2").spec : Fixed;
+  B1.FlowIn.z("O2") : 0.;
+  B1.FlowIn.z("TEG").spec : Fixed;
+  B1.FlowIn.z("TEG") : 0.;
+  B1.HTO : 7.397313383673082e-003;
+  B1.I : 491.9740682263555;
+  B1.Icell.Record : True;
+  B1.Icell : 4919.740682263555;
+  B1.MW("CH4") : 16.04276;
+  B1.MW("CO2") : 44.00980000000001;
+  B1.MW("EG") : 62.06844000000001;
+  B1.MW("H2") : 2.015880000000001;
+  B1.MW("H2O") : 18.01528;
+  B1.MW("KOH") : 56.10564000000001;
+  B1.MW("N2") : 28.01348;
+  B1.MW("O2") : 31.99880000000001;
+  B1.MW("TEG") : 150.17476;
+  B1.nF : 0.9514906632592189;
+  B1.nH2 : 2.910973099339988e-002;
+  B1.P_H : -0.3023917313020362;
+  B1.P_z("CH4") : 0.;
+  B1.P_z("CO2") : 0.;
+  B1.P_z("EG") : 0.;
+  B1.P_z("H2") : 1.042487937943663e-002;
+  B1.P_z("H2O") : 0.8378304732971408;
+  B1.P_z("KOH") : 0.1465322076337045;
+  B1.P_z("N2") : 0.;
+  B1.P_z("O2") : 5.212439689718316e-003;
+  B1.P_z("TEG") : 0.;
+  B1.Prod("CH4") : 0.;
+  B1.Prod("CO2") : 0.;
+  B1.Prod("EG") : 0.;
+  B1.Prod("H2") : 0.1047950315762396;
+  B1.Prod("H2O") : 8.422204968423761;
+  B1.Prod("KOH") : 1.473;
+  B1.Prod("N2") : 0.;
+  B1.Prod("O2") : 5.239751578811979e-002;
+  B1.Prod("TEG") : 0.;
+  B1.Qin : -3.062016971795155;
+  B1.Qout.Q : -2.225508325969821e-002;
+  B1.RhoA : 32.39341639975488;
+  B1.RhoC : 32.20382298876232;
+  B1.Vcell.Record : True;
+  B1.Vcell : 2.032627458608049;
+  B1.Vrev : 1.187;
+  B1.Win.W.spec : Fixed;
+  B1.Win.W : 12.;
+  Graphics : TEXT CLSID {A0DFFFE6-908E-11CE-A964-0000C08C668E}
+# of PFS Objects = 7
+SIZE -7.88204 5.66279 -3.0153 3.68787
+BLOCK
+ID: B1
+Version: 1
+ICON: "AEC_alg"
+Flag 0
+Section 
+At -0.762299 -0.073376
+Label At 0.000000 0.000000
+Scale 1.000000 Modifier 0
+STREAM
+ID: W-IN
+Version: 2
+Flag 0
+TYPE 0 TERMINAL 1
+At -6.106025 3.646100
+Label At 2.682420 0.000000
+ROUTE 0 0
+$ $ 0.0 0.0
+ROUTE 1 0
+r r -6.106025 3.646100 0
+x x -0.741185 3.646100 0
+y y -0.741185 1.626667 0
+t u -0.741185 1.426664 0
+$ C 1.000000 0.0
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 1
+$ $ 0.0 0.0
+ROUTE 1 1
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 2
+$ $ 0.0 0.0
+ROUTE 1 2
+$ $ 0.0 0.0
+STREAM
+ID: FEED
+Version: 2
+Flag 0
+TYPE 0 TERMINAL 1
+At -7.826638 -2.904500
+Label At 3.517777 0.000000
+ROUTE 0 0
+$ $ 0.0 0.0
+ROUTE 1 0
+r r -7.826638 -2.904500 0
+x x -0.791084 -2.904500 0
+y y -0.791084 -1.777476 0
+x x -0.798956 -1.777476 0
+t d -0.798957 -1.577476 0
+$ C 1.000000 0.0
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 1
+$ $ 0.0 0.0
+ROUTE 1 1
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 2
+$ $ 0.0 0.0
+ROUTE 1 2
+$ $ 0.0 0.0
+STREAM
+ID: CATHODE
+Version: 2
+Flag 0
+TYPE 0 TERMINAL 2
+At -6.281166 2.834087
+Label At 1.749353 0.000000
+ROUTE 0 0
+r r -6.281166 2.834087 0
+x y -2.782459 2.834087 0
+y 0 -2.782459 2.185124 0
+t u -2.782459 1.985124 0
+$ C 1.000000 0.0
+$ $ 0.0 0.0
+ROUTE 1 0
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 1
+$ $ 0.0 0.0
+ROUTE 1 1
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 2
+$ $ 0.0 0.0
+ROUTE 1 2
+$ $ 0.0 0.0
+STREAM
+ID: ANODE
+Version: 2
+Flag 0
+TYPE 0 TERMINAL 2
+At 4.673055 2.850008
+Label At -1.715367 0.000000
+ROUTE 0 0
+r l 4.673055 2.850008 0
+x y 1.242321 2.850008 0
+y 0 1.242321 2.127354 0
+t u 1.242321 1.927354 0
+$ C 1.000000 0.0
+$ $ 0.0 0.0
+ROUTE 1 0
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 1
+$ $ 0.0 0.0
+ROUTE 1 1
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 2
+$ $ 0.0 0.0
+ROUTE 1 2
+$ $ 0.0 0.0
+STREAM
+ID: Q-OUT
+Version: 2
+Flag 0
+TYPE 0 TERMINAL 2
+At 5.612443 -2.961459
+Label At -2.705010 0.000000
+ROUTE 0 0
+r l 5.612443 -2.961459 0
+x y 0.202422 -2.961459 0
+y 0 0.202422 -1.777476 0
+t d 0.202422 -1.577476 0
+$ C 1.000000 0.0
+$ $ 0.0 0.0
+ROUTE 1 0
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 1
+$ $ 0.0 0.0
+ROUTE 1 1
+$ $ 0.0 0.0
+At 0.000000 0.000000
+Label At 0.000000 0.000000
+ROUTE 0 2
+$ $ 0.0 0.0
+ROUTE 1 2
+$ $ 0.0 0.0
+LEGEND
+Version: 2
+Dim: -3.84009 -3.2 -3.06062 -3.35039
+Size: 0.0130502
+Font: 1 0 =Times New Roman
+# of PFS Objects = 0
+VIEWPORT -11.295287 9.076043 4.636321 -3.963748
+LAYOUT
+TableFormat 1
+Pages 1 1 1 1
+PAGESETUP
+PAPERSIZE 
+PAPERSOURCE 
+ORIENTATION -1
+PRINTPAGENO 1 1
+LEFTMARGIN 0.5"
+RIGHTMARGIN 0.5"
+TOPMARGIN 0.5"
+BOTTOMMARGIN 0.5"
+VISIBILITY 0.030000
+PFDFLAG 255 255
+PFDMODE 0
+SCALE 0.013050
+
+ENDTEXT;
+END
+
+Properties
+Package : "PropertiesPlus";
+DefinitionText : TEXT MM "40.0" FLAVOR "NO" VERSION "40.0" DATETIME "Fri Jun  7 13:22:12 2024" 
+MACHINE "WIN-NT/VC" 
+? SETUP MAIN ? \ "RUN-CLASS" RUN-CLASS = PROP \ \ SIMULATE INTERACTIVE = NO 
+MOLEFLOW = MOLEFLOW \ ? SETUP GLOBAL ? \ "IN-UNITS" INSET = METCBAR \ ? SETUP 
+"SIM-OPTIONS" ? ; "METCBAR_MOLE" ; ? SETUP "UNITS-SET" METCBAR ? \ 
+DESCRIPTION DESCRIPTION = "User-defined units set" \ \ MMLOCAL \ \ UNITSET 
+BASESET = MET ( 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 5 3 4 3 3 3 3 3 3 3 3 4 
+3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 
+3 3 3 3 5 3 3 3 3 3 3 5 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 
+3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 7 3 3 3 3 3 3 3 3 3 3 
+3 3 3 3 3 3 3 ) \ ? DATABANKS ? \ DATABANKS \ ? COMPONENTS MAIN ? \ 
+COMPONENTS CID = CO2 ANAME = CO2 OUTNAME = CO2 DBNAME1 = "CARBON-DIOXIDE" 
+ANAME1 = "CO2" /  CID = H2 ANAME = H2 OUTNAME = H2 DBNAME1 = "HYDROGEN" 
+ANAME1 = "H2" /  CID = O2 ANAME = O2 OUTNAME = O2 DBNAME1 = "OXYGEN" ANAME1
+ = "O2" /  CID = N2 ANAME = N2 OUTNAME = N2 DBNAME1 = "NITROGEN" ANAME1 = "N2" 
+/  CID = CH4 ANAME = CH4 OUTNAME = CH4 DBNAME1 = "METHANE" ANAME1 = "CH4" /  
+CID = H2O ANAME = H2O OUTNAME = H2O DBNAME1 = "WATER" ANAME1 = "H2O" /  CID
+ = TEG ANAME = C6H14O4 OUTNAME = TEG DBNAME1 = "TRIETHYLENE-GLYCOL" ANAME1 = 
+"C6H14O4" /  CID = KOH ANAME = KOH OUTNAME = KOH DBNAME1 = 
+"POTASSIUM-HYDROXIDE" ANAME1 = "KOH" /  CID = EG ANAME = C2H6O2 OUTNAME = EG 
+DBNAME1 = "ETHYLENE-GLYCOL" ANAME1 = "C2H6O2" /  CID = DMPG ANAME = C12H26O6 
+OUTNAME = DMPG DBNAME1 = "PENTAETHYLENE-GLYCOL-DIMETHYL-ET" ANAME1 = "C12H26O6" 
+\ ? COMPONENTS "ADA/PCS" "LE-PROP-DATA" ? ; "METCBAR_MOLE" ; ? COMPONENTS 
+"ADA/PCS" "PETRO-PROP" ? ? COMPONENTS "ADA/PCS" "ADA-SETUP" ? ? COMPONENTS 
+"COMP-LIST" GLOBAL ? ? COMPONENTS "UNIFAC-GROUP" ? ? PROPERTIES MAIN ? \ 
+GPROPERTIES GBASEOPSET = UNIQUAC GOPSETNAME = UNIQUAC PARCON = -2 \ ? 
+PROPERTIES COMPARE ? ? PROPERTIES "OPTION-SETS" "PENG-ROB" ? \ PARAM BASE = 
+"PENG-ROB" \ ? PROPERTIES "OPTION-SETS" UNIQUAC ? \ PARAM BASE = UNIQUAC \ ? 
+PROPERTIES "NC-PROPS" ? ? PROPERTIES "MOLEC-STRUCT" CH4 ? ? PROPERTIES 
+"MOLEC-STRUCT" CO2 ? ? PROPERTIES "MOLEC-STRUCT" DMPG ? ? PROPERTIES 
+"MOLEC-STRUCT" EG ? ? PROPERTIES "MOLEC-STRUCT" H2 ? ? PROPERTIES 
+"MOLEC-STRUCT" H2O ? ? PROPERTIES "MOLEC-STRUCT" KOH ? ? PROPERTIES 
+"MOLEC-STRUCT" N2 ? ? PROPERTIES "MOLEC-STRUCT" O2 ? ? PROPERTIES 
+"MOLEC-STRUCT" TEG ? ? PROPERTIES ESTIMATION ? ; "METCBAR_MOLE" ; \ DIRECTOR 
+ALLONLY = ALL BINCHOICE = NO \ \ BINARY1 PROPERTY = UNIQ METHOD = ( UNIFAC ) 
+\ \ BINARY2 1 COMP1 = ALL COMP2 = ALL \ ? PROPERTIES PARAMETERS SUMMARY ? ? 
+PROPERTIES PARAMETERS BINARY SCALAR "MLQKIJ-1" ? ; "ENG_MOLE" ; \ PROP-LIST 
+PARAMNAME = MLQKIJ SETNO = 1 UNITROW = 0 \ ? PROPERTIES PARAMETERS BINARY 
+SCALAR "RKTKIJ-1" ? ; "ENG_MOLE" ; \ PROP-LIST PARAMNAME = RKTKIJ SETNO = 1 
+UNITROW = 0 \ ? PROPERTIES PARAMETERS BINARY "T-DEPENDENT" "ANDKIJ-1" ? ; 
+"ENG_MOLE" ; \ PROP-LIST PARAMNAME = ANDKIJ SETNO = 1 UNITROW = 0 TUNITROW = 
+22 TUNITLABEL = F NEL = 2 \ ? PROPERTIES PARAMETERS BINARY "T-DEPENDENT" 
+"ANDMIJ-1" ? ; "ENG_MOLE" ; \ PROP-LIST PARAMNAME = ANDMIJ SETNO = 1 UNITROW
+ = 0 TUNITROW = 22 TUNITLABEL = F NEL = 2 \ ? PROPERTIES PARAMETERS BINARY 
+"T-DEPENDENT" "HENRY-1" ? ; "METCBAR_MOLE" ; \ PROP-LIST PARAMNAME = HENRY 
+SETNO = 1 UNITROW = 20 UNITLABEL = bar TUNITROW = 22 TUNITLABEL = C BDBANK = 
+( "APV140 BINARY" "APV140 HENRY-AP" ) NEL = 7 \ ? PROPERTIES PARAMETERS 
+BINARY "T-DEPENDENT" "MUKIJ-1" ? ; "ENG_MOLE" ; \ PROP-LIST PARAMNAME = MUKIJ 
+SETNO = 1 UNITROW = 0 TUNITROW = 22 TUNITLABEL = F NEL = 6 \ ? PROPERTIES 
+PARAMETERS BINARY "T-DEPENDENT" "MULIJ-1" ? ; "ENG_MOLE" ; \ PROP-LIST 
+PARAMNAME = MULIJ SETNO = 1 UNITROW = 0 TUNITROW = 22 TUNITLABEL = F NEL = 11 
+\ ? PROPERTIES PARAMETERS BINARY "T-DEPENDENT" "PRKBV-1" ? ; "METCBAR_MOLE" ; 
+\ PROP-LIST PARAMNAME = PRKBV SETNO = 1 UNITROW = 0 TUNITROW = 22 TUNITLABEL
+ = C BDBANK = ( "APV140 EOS-LIT" ) NEL = 5 \ \ BPVAL PARAMNAME2 = PRKBV CID1
+ = CO2 CID2 = H2 UNITROW2 = 0 TUNITROW2 = 22 TUNITLABEL2 = C VAL1 = 
+"APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = "APV140 EOS-LIT" VAL4 = 
+"APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  PARAMNAME2 = PRKBV CID1 = CO2 
+CID2 = N2 UNITROW2 = 0 TUNITROW2 = 22 TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" 
+VAL2 = "APV140 EOS-LIT" VAL3 = "APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 
+= "APV140 EOS-LIT" /  PARAMNAME2 = PRKBV CID1 = CO2 CID2 = CH4 UNITROW2 = 0 
+TUNITROW2 = 22 TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" 
+VAL3 = "APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  
+PARAMNAME2 = PRKBV CID1 = CO2 CID2 = H2O UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = 
+"APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  
+PARAMNAME2 = PRKBV CID1 = H2 CID2 = N2 UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = 
+"APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  
+PARAMNAME2 = PRKBV CID1 = H2 CID2 = CH4 UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = 
+"APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  
+PARAMNAME2 = PRKBV CID1 = O2 CID2 = N2 UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = 
+"APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" /  
+PARAMNAME2 = PRKBV CID1 = N2 CID2 = CH4 UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 EOS-LIT" VAL2 = "APV140 EOS-LIT" VAL3 = 
+"APV140 EOS-LIT" VAL4 = "APV140 EOS-LIT" VAL5 = "APV140 EOS-LIT" \ ? 
+PROPERTIES PARAMETERS BINARY "T-DEPENDENT" "PRLIJ-1" ? ; "METCBAR_MOLE" ; \ 
+PROP-LIST PARAMNAME = PRLIJ SETNO = 1 UNITROW = 0 TUNITROW = 22 TUNITLABEL = 
+C NEL = 8 \ ? PROPERTIES PARAMETERS BINARY "T-DEPENDENT" "UNIQ-1" ? ; 
+"METCBAR_MOLE" ; \ PROP-LIST PARAMNAME = UNIQ SETNO = 1 UNITROW = 0 TUNITROW
+ = 22 TUNITLABEL = C BDBANK = ( "APV140 VLE-IG" "APV140 LLE-LIT" 
+"APV140 LLE-ASPEN" "APV140 VLE-LIT" ) NEL = 12 ESTIMATE = YES \ \ BPVAL 
+PARAMNAME2 = UNIQ CID1 = H2O CID2 = EG UNITROW2 = 0 TUNITROW2 = 22 
+TUNITLABEL2 = C VAL1 = "APV140 VLE-IG" VAL2 = "APV140 VLE-IG" VAL3 = 
+"APV140 VLE-IG" VAL4 = "APV140 VLE-IG" VAL5 = "APV140 VLE-IG" VAL6 = 
+"APV140 VLE-IG" VAL7 = "APV140 VLE-IG" VAL8 = "APV140 VLE-IG" VAL9 = 
+"APV140 VLE-IG" VAL10 = "APV140 VLE-IG" VAL11 = "APV140 VLE-IG" VAL12 = 
+"APV140 VLE-IG" \ ? PROPERTIES "ATTR-COMPS" ? ? POLYMERS ? ? REPORT 
+"STREAM-REPOR" ? \ OPTIONS MOLEFLOW = MOLEFLOW \ ? REPORT "PROPERTY-REP" ? 
+\ OPTIONS PCES = PCES \ 
+
+ GRAPHICS_BACKUP
+PFS V NONE
+$CONFIG
+paramdata APV140 ENRTL-RK
+paramdata APV140 VLE-IG
+paramdata APV140 VLE-RK
+paramdata APV140 VLE-HOC
+paramdata APV140 LLE-LIT
+paramdata APV140 LLE-ASPEN
+paramdata APV140 VLE-LIT
+paramdata APV140 BINARY
+paramdata APV140 EOS-LIT
+paramdata APV140 HENRY-AP
+paramdata APV140 SRK-ASPEN
+paramdata APV140 PC-SAFT
+paramdata APV140 POLYPCSF
+paramdata APV140 HYSYS
+paramdata APESV140 AP-EOS
+paramdata NISTV140 NIST-HOC
+paramdata NISTV140 NIST-IG
+paramdata NISTV140 NIST-RK
+paramdata NISTV140 NIST-EOS
+purebank APV140 PURE37
+purebank APV140 AQUEOUS
+purebank APV140 SOLIDS
+purebank APV140 INORGANIC
+purebank APESV140 AP-EOS
+purebank NISTV140 NIST-TRC
+regdbank 1
+ftn_check 1
+autoblockid 1
+autostreamid 1
+showblockid 1
+showstreamid 1
+autoplacement 1
+grid 2
+gridresolution 0.100000
+scale 0
+streamprefix 
+blockprefix B
+labelscale 1.000000
+qwformat %.0f
+wformat %.0f
+tempformat %.0f
+presformat %.0f
+flowformat %.0f
+strmqwformat %.0f
+strmwformat %.0f
+vflowformat %.0f
+mflowformat %.0f
+vfracformat %.0f
+pseudobatch 0
+partial 1
+animation 1
+runanyway 0
+globalqw 0
+globalw 0
+globaltemp 0
+globalpres 0
+globalflow 0
+globalstrmqw 0
+globalstrmw 0
+globalvflow 0
+globalmflow 0
+globalvfrac 0
+browserheight 6375
+browserwidth 9000
+browsertreewidth 2370
+polyplusenabled 1
+dynaplusenabled 1
+bfracenabled 1
+rtfenabled 1
+rspenabled 0
+pinchenabled 0
+linklimit 5000
+material_color 0
+material_style 0
+material_width 1
+heat_color 0
+heat_style 2
+heat_width 1
+heat_termid Q
+work_color 0
+work_style 1
+work_width 1
+work_termid W
+connections_color 9
+connections_style 3
+connections_width 1
+measurements_color 4
+measurements_style 3
+measurements_width 1
+power_color 10
+power_style 5
+power_width 1
+power_termid I
+displayeoconn 0
+displayeomeas 1
+displayeomeastype 2
+showeoviews 0
+eoautosave 1
+allow_system_userprops 0
+copy_estimation 1
+copy_retrieved 1
+purge_incomp_params 0
+set_default_biparams 0
+set_default_dataset1 0
+set_default_dataset0 1
+roottype 1
+exchangerfile 1
+streamformat 1
+runsettingfile 1
+usermodelfile 1
+fortranfile 0
+timeout 1000
+#
+#
+E_LINK
+
+$_SUMMARY_FILE
+ MMSUMMARY40.0                                                                  
+ IDSET RUNID (PROPERTIES) (114 *5)                                              
+ IDSET IT (PROPERTIES) (117 *6 119 *6 115 *1)                                   
+ LSET RUNID (%RUNID)                                                            
+ LSET IT (%IT)                                                                  
+ IDSET VERS (PROPERTIES) (345 *6 346 *6 347 *6 348 *6 355 *6)                   
+ LSET VERS (%VERS)                                                              
+ DSET RUN-STATUS VERS @VERS ( "40.0" "WIN-X64" "" "DTTD" "lab000000" )          
+ IDSET STRNAM (PROPERTIES) (1233 *6)                                            
+ LSET STRNAM (%STRNAM)                                                          
+ IDSET ID_STRPR (PROPERTIES) ( 454 *2 <119> 1236 *2 <125> 1237 *2 <29> 1238 *2  
+ <55> 1239 *2 <55> 1083 *6 1084 *6 )                                            
+ LSET L_STRPR (%ID_STRPR)                                                       
+ IDSET ID_GUID (PROPERTIES) ( 1270 *6 )                                         
+ LSET L_GUID (%ID_GUID)                                                         
+ IDSET STATUS (PROPERTIES) (125 *1 126 *1 127 *1 128 *1 129 *1 130 *1)          
+ LSET STATUS (%STATUS)                                                          
+ DSET RUN-STATUS STATUS @STATUS ( 8 * * * * * )                                 
+ DSET RUN-STATUS COMPSTAT @L_1 (0)                                              
+ IDSET ID_1 (NPOINT) ( #60)                                                     
+ IDSET ID_2 (PROPERTIES) (747 *6)                                               
+ LSET L_1 ( %ID_1 & %ID_2)                                                      
+ DSET RUN-STATUS ERRTXT @L_1 (                                                  
+ ""                                                                             
+ "The following messages were issued during Property estimation:"               
+ ""                                                                             
+ "*  WARNING"                                                                   
+ "   PROP-NAME UNIQUAC FOR COMPONENT PAIR CO2 AND KOH"                          
+ "   CANNOT BE ESTIMATED USING THE UNIFAC METHOD AS SPECIFIED"                  
+ "   BECAUSE OF MISSING INPUT PARAMETERS:"                                      
+ "      STRUCTUR, GMUFR   , GMUFQ"                                              
+ ""                                                                             
+ "*  WARNING"                                                                   
+ "   PROP-NAME UNIQUAC FOR COMPONENT PAIR H2 AND KOH"                           
+ "   CANNOT BE ESTIMATED USING THE UNIFAC METHOD AS SPECIFIED"                  
+ "   BECAUSE OF MISSING INPUT PARAMETERS:"                                      
+ "      STRUCTUR, GMUFR   , GMUFQ"                                              
+ ""                                                                             
+ "*  WARNING"                                                                   
+ "   PROP-NAME UNIQUAC FOR COMPONENT PAIR O2 AND KOH"                           
+ "   CANNOT BE ESTIMATED USING THE UNIFAC METHOD AS SPECIFIED"                  
+ "   BECAUSE OF MISSING INPUT PARAMETERS:"                                      
+ "      STRUCTUR, GMUFR   , GMUFQ"                                              
+ ""                                                                             
+ "*  WARNING"                                                                   
+ "   PROP-NAME UNIQUAC FOR COMPONENT PAIR N2 AND KOH"                           
+ "   CANNOT BE ESTIMATED USING THE UNIFAC METHOD AS SPECIFIED"                  
+ "   BECAUSE OF MISSING INPUT PARAMETERS:"                                      
+ "      STRUCTUR, GMUFR   , GMUFQ"                                              
+ ""                                                                             
+ "*  WARNING"                                                                   
+ "   PROP-NAME UNIQUAC FOR COMPONENT PAIR CH4 AND KOH"                          
+ "   CANNOT BE ESTIMATED USING THE UNIFAC METHOD AS SPECIFIED"                  
+ "   BECAUSE OF MISSING INPUT PARAMETERS:"                                      
+ "      STRUCTUR, GMUFR   , GMUFQ"                                              
+ ""                                                                             
+ "*  WARNING"                                                                   
+ "   PROP-NAME UNIQUAC FOR COMPONENT PAIR H2O AND KOH"                          
+ "   CANNOT BE ESTIMATED USING THE UNIFAC METHOD AS SPECIFIED"                  
+ "   BECAUSE OF MISSING INPUT PARAMETERS:"                                      
+ "      STRUCTUR, GMUFR   , GMUFQ"                                              
+ ""                                                                             
+ "*  WARNING"                                                                   
+ "   PROP-NAME UNIQUAC FOR COMPONENT PAIR TEG AND KOH"                          
+ "   CANNOT BE ESTIMATED USING THE UNIFAC METHOD AS SPECIFIED"                  
+ "   BECAUSE OF MISSING INPUT PARAMETERS:"                                      
+ "      STRUCTUR, GMUFR   , GMUFQ"                                              
+ ""                                                                             
+ "-  INFORMATION"                                                               
+ "   STRUCTURE FOR COMPONENT KOH HAS NOT BEEN DEFINED."                         
+ "   PCES CANNOT USE GROUP-CONTRIBUTION METHODS TO ESTIMATE MISSING PROPERTIES" 
+ ""                                                                             
+ "*  WARNING"                                                                   
+ "   PROP-NAME UNIQUAC FOR COMPONENT PAIR KOH AND EG"                           
+ "   CANNOT BE ESTIMATED USING THE UNIFAC METHOD AS SPECIFIED"                  
+ "   BECAUSE OF MISSING INPUT PARAMETERS:"                                      
+ "      STRUCTUR, GMUFR   , GMUFQ   , GMUQR   , GMUQQ"                          
+ ""                                                                             
+ "*  WARNING"                                                                   
+ "   PROP-NAME UNIQUAC FOR COMPONENT PAIR KOH AND DMPG"                         
+ "   CANNOT BE ESTIMATED USING THE UNIFAC METHOD AS SPECIFIED"                  
+ "   BECAUSE OF MISSING INPUT PARAMETERS:"                                      
+ "      STRUCTUR, GMUFR   , GMUFQ   , GMUQR   , GMUQQ"                          
+ )                                                                              
+ DSET RUN-STATUS RUNID @RUNID ("_2157flx")                                      
+ DSET RUN-STATUS IT @IT ( "JUNE 7, 2024        1:22:08 P.M." "_2157flx.inm" 2)  
+
+ENDTEXT;
+TimeStamp : "31111431 -1652334966";
+
+Default as ComponentList; 
+Within Default
+  Components :["CH4","CO2","EG","H2","H2O","KOH","N2","O2","TEG"];
+EndWithin
+End
+
+Options
+  AbsoluteSingularityTol: 1.e-004;
+  AbsPerturb: 1.e-005;
+  AbsTearTol: 1.e-005;
+  AbsTol: 1.e-005;
+  AssignmentWarningsEnabled: True;
+  ChangeTol: 1.e-005;
+  CheckProcDerivs: "Off";
+  Compression: True;
+  CurrentUOMSet: "Metric";
+  Decomposer.ProgID: "AspenTech.Decomposer";
+  Decomposition.MultipleGroup: True;
+  DerivAbsTol: 1.e-003;
+  DerivRelTol: 0.1;
+  EqnTol: 1.e-005;
+  EquationSensCheck: False;
+  EquationSensTol: 10000000000.;
+  EstimationPrintLevel: "Medium";
+  EstimationReturntoBestPoint: False;
+  EstimationSolver: 2;
+  Estimator: 1;
+  ExplicitEventTolerance: 1.e-005;
+  Feasopt.MaxAbsStep: 10.;
+  Feasopt.MaxEval: 100;
+  Feasopt.MaxRelStep: 10.;
+  Feasopt.OptTol: 1.e-004;
+  Homotopy.InitialStep: 0.1;
+  Homotopy.MaximumStep: 1.;
+  Homotopy.MinimumStep: 1.e-002;
+  Homotopy.StepDecrement: 0.5;
+  Homotopy.StepIncrement: 10;
+  Integration.AbsErrorTol: 1.e-005;
+  Integration.AbsTearTol: 1.e-005;
+  Integration.DiscontinuityEventTol: 1.e-005;
+  Integration.EnforceMinStep: False;
+  Integration.IncSensErrors: False;
+  Integration.InitStepSize: 5.e-003;
+  Integration.ItplToComTime: True;
+  Integration.LocateIEvents: False;
+  Integration.MaxOrder: 5;
+  Integration.MaxStepSize: 1.;
+  Integration.MinStepSize: 1.e-003;
+  Integration.ProgID: "AspenTech.UnifiedIntegrator";
+  Integration.RcvTornVars: False;
+  Integration.ReInitAfterEE: False;
+  Integration.ReInitAfterIE: False;
+  Integration.RelErrorTol: 1.e-005;
+  Integration.RelTearTol: 1.e-005;
+  Integration.RewindToLastConvStep: False;
+  Integration.ShowHIErrors: 0;
+  Integration.ShowHTIErrors: 0;
+  Integration.StepRedFact: 0.5;
+  Integration.StepSize: 1.e-002;
+  Integration.StepSizeType: "Variable";
+  Integration.TestSAndAVars: False;
+  Integration.UsePrevAfterEE: False;
+  Integrator: "ImplicitEuler";
+  KeepCompiledEvaluationFiles: False;
+  LinearSolver: "MA48";
+  ListEquivalenceVariables: True;
+  LogLikelihood.MaxIter: 100;
+  LogLikelihood.SolTol: 1.e-004;
+  MA48.DropTol: 0.;
+  MA48.EnableRefineIter: True;
+  MA48.MaxRefineIter: 10;
+  MA48.PivotSearch: 3;
+  MA48.PivotTol: 1.e-050;
+  MA48.Repivot: 0;
+  MA48.UseTranspose: 0;
+  MaxTearIter: 100;
+  Nl2sol.AbsFuncTol: 9.999999999999999e-021;
+  Nl2sol.FalseConvTol: 0.;
+  Nl2sol.MaxIter: 50;
+  Nl2sol.RelFuncTol: 1.e-004;
+  Nl2sol.SolTol: 1.e-004;
+  NLASolver: "Standard";
+  Nonlinear.AbsPert: 1.e-005;
+  Nonlinear.BestOnFail: True;
+  Nonlinear.BoundClip: 1.e-006;
+  Nonlinear.BoundFrac: 1.;
+  Nonlinear.ConvCrit: "Residual";
+  Nonlinear.CreepIter: 0;
+  Nonlinear.CreepSize: 0.1;
+  Nonlinear.Dogleg: False;
+  Nonlinear.HiResidual: 0;
+  Nonlinear.HiVarSteps: 0;
+  Nonlinear.MathsPrint: 0;
+  Nonlinear.MaxDivSteps: 10;
+  Nonlinear.MaxFastNewtonSteps: 5;
+  Nonlinear.MaxIter: 100;
+  Nonlinear.MaxStepRed: 10;
+  Nonlinear.MaxVarStep: 50.;
+  Nonlinear.Method: "Mixed Newton";
+  Nonlinear.RangeFrac: 0.;
+  Nonlinear.SingPert: 1.e-002;
+  OptimizationObjFun: "Minimize";
+  OptimizationPrintLevel: "Medium";
+  Optimizer: 1;
+  PrintLevel: 2;
+  PropInfo: -1;
+  RelativeSingularityCheck: True;
+  RelativeSingularityTol: 1.e-002;
+  RelPerturb: 1.e-005;
+  RelTearTol: 1.e-005;
+  RelTol: 1.e-005;
+  RunMode: "Dynamic";
+  SaveFreeVariableValues: True;
+  Scaling: False;
+  SensErrorCheck: True;
+  SnapshotSettings.EnableDynInitialization: True;
+  SnapshotSettings.EnableFileSaved: False;
+  SnapshotSettings.EnableInitialization: True;
+  SnapshotSettings.EnableInitialSpec: True;
+  SnapshotSettings.EnableMaximum: True;
+  SnapshotSettings.EnableonReinitialization: False;
+  SnapshotSettings.EnableProblemEdit: True;
+  SnapshotSettings.EnableRegularSnapshot: False;
+  SnapshotSettings.EnableSteadyState: True;
+  SnapshotSettings.Interval: 2.;
+  SnapshotSettings.Maximum: 10;
+  SnapshotSettings.SaveConvergedOnly: True;
+  SnapshotSettings.TakeAutoSnapshots: True;
+  SyncSteps: "Full";
+  Tearing: "update";
+  TearUpdate: "Direct";
+  TimeSettings.CommunicationInterval: 1.e-002;
+  TimeSettings.CommunicationUnits: "Hours";
+  TimeSettings.DisplayUpdateInterval: 2000;
+  TimeSettings.EnablePauseAt: False;
+  TimeSettings.EnableStepFor: False;
+  TimeSettings.PauseAt: 0.;
+  TimeSettings.RealTimeSyncFactor: 0.;
+  TimeSettings.RecordHistory: False;
+  TimeSettings.StepFor: 0;
+  TimeSettings.TimeDisplayUnits: "Hours";
+  UseCompiledEvaluation: False;
+  UseSavedSnapshotOnLoad: False;
+  WatchGroup: 0;
+  WatchSubGroup: 0;
+  Wegstein.MaxAcceleration: 0.;
+  Wegstein.MinAcceleration: -5.;
+  OpenLASolver: "";
+  OpenNLASolver: "";
+  OpenOPTSolver: "";
+  OpenESTSolver: "";
+End
+Optimization
+  IsDynamic : FALSE;
+  ElementSizeBoundsAutomatic : TRUE;
+  EndTime : 1.000000000000000;
+  Control.FinalTime_Initial : 1.000000000000000;
+  Control.FinalTime_Upper : 2.000000000000000;
+  Control.FinalTime_Lower : 0.5000000000000000;
+  Control.FinalTime_IsFixed : TRUE;
+  Control.FinalTime_IsObjective : FALSE;
+  Control.Elements : 5;
+  Control.FixedInterval : TRUE;
+  Control.MovingElementsVarying : FALSE;
+  Control.PiecewiseLinear : FALSE;
+  Control(0) : 0.2000000000000000, 0.05000000000000000, 0.4000000000000000 ;
+  Control(1) : 0.2000000000000000, 0.05000000000000000, 0.4000000000000000 ;
+  Control(2) : 0.2000000000000000, 0.05000000000000000, 0.4000000000000000 ;
+  Control(3) : 0.2000000000000000, 0.05000000000000000, 0.4000000000000000 ;
+  Control(4) : 0.2000000000000000, 0.05000000000000000, 0.4000000000000000 ;
+End
+Estimation
+  CalcHeteroParams : TRUE;
+  ExperimentTimeUnit: "";
+End
+Homotopy
+ Enabled: FALSE;
+End
+SimulationAccessExtension
+  ENABLED: false;
+End
+SpecAnalysis
+End
+OnLineLinks
+  Protocol: "OPC", 1;
+  //Server: "";
+  IO: Synchronous, Cached;
+  Bounds: Clip;
+  Quality: UseLast;
+  Update: 1000;
+  PrintLevel: 2;
+  Enabled: OFF;
+  Input Events : Before SS Run, After DYN Step, After INI Step, Before INI Run;
+  Output Events: After SS Run, After DYN Step, After INI Step, After INI Run;
+End

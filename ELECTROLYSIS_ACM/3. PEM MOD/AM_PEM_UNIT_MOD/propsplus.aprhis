@@ -1,0 +1,117 @@
+
+ + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + +
+ + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + +
+ + +                                                                         + +
+ + +                   ASPEN PROPERTIES CALCULATION HISTORY                  + +
+ + +                                                                         + +
+ + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + +
+ + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + +
+
+ ASPEN PROPERTIES IS A TRADEMARK OF     HOTLINE:
+ ASPEN TECHNOLOGY, INC.                 U.S.A. 888/996-7100
+ 781/221-6400                           EUROPE (44) 1189-226555
+
+ PLATFORM: WIN-X64                                       JUNE 9, 2024        
+ VERSION: 40.0   Build 359                               SUNDAY      
+ INSTALLATION:                                           12:37:37 P.M.       
+
+ THIS COPY OF ASPEN PROPERTIES LICENSED TO                                 
+
+
+      ASPEN PROPERTIES (TM) IS A PROPRIETARY PRODUCT OF ASPEN TECHNOLOGY, 
+      INC. (ASPENTECH), AND MAY BE USED ONLY UNDER AGREEMENT WITH ASPENTECH.
+      RESTRICTED RIGHTS LEGEND:  USE, REPRODUCTION, OR DISCLOSURE BY THE
+      U.S. GOVERNMENT IS SUBJECT TO RESTRICTIONS SET FORTH IN 
+      (i) FAR 52.227-14, Alt. III, (ii) FAR 52.227-19, (iii) DFARS 
+      252.227-7013(c)(1)(ii), or (iv) THE ACCOMPANYING LICENSE AGREEMENT,
+      AS APPLICABLE. FOR PURPOSES OF THE FAR, THIS SOFTWARE SHALL BE DEEMED
+      TO BE "UNPUBLISHED" AND LICENSED WITH DISCLOSURE PROHIBITIONS.
+      CONTRACTOR/SUBCONTRACTOR: ASPEN TECHNOLOGY, INC. 20 CROSBY DRIVE,
+      BEDFORD, MA 01730.
+ *** INPUT SUMMARY ***
+
+ >>CURRENT RUN
+
+   ORIGINAL RUN                           JUNE 9, 2024        
+   12:37:37 P.M.                          SUNDAY      
+   INPUT FILE: _3610eeu.inm
+   RUN ID : _3610eeu
+          1    ;
+          2    ;Input file created by Aspen Properties Rel. 40.0 at 12:37:36 Sun Jun 9, 2024
+          3    ;Directory   Runid PROPSPLUS
+          4    ;
+          5
+          6
+          7    PROP
+          8
+          9
+         10    IN-UNITS ENG SHORT-LENGTH=in
+         11
+         12    DATABANKS 'APV140 PURE37' / 'APV140 AQUEOUS' / 'APV140 SOLIDS' &
+         13             / 'APV140 INORGANIC' / 'APESV140 AP-EOS' /  &
+         14            'NISTV140 NIST-TRC' / NOASPENPCD
+         15
+         16    PROP-SOURCES 'APV140 PURE37' / 'APV140 AQUEOUS' /  &
+         17            'APV140 SOLIDS' / 'APV140 INORGANIC' / 'APESV140 AP-EOS' &
+         18             / 'NISTV140 NIST-TRC'
+         19
+         20    COMPONENTS
+         21        H2O H2O /
+         22        H2 H2 /
+         23        O2 O2 /
+         24        CO2 CO2 /
+         25        CH4 CH4 /
+         26        N2 N2 /
+         27        TEG C6H14O4 /
+         28        EG C2H6O2 /
+         29        DMPG C12H26O6
+         30
+         31    PROPERTIES PENG-ROB
+         32        PROPERTIES UNIQUAC
+         33
+         34    ESTIMATE ALL
+         35        UNIQ ALL ALL UNIFAC
+         36
+         37    PROP-DATA PRKBV-1
+         38        IN-UNITS ENG SHORT-LENGTH=in
+         39        PROP-LIST PRKBV
+         40        BPVAL H2O CO2 .1200000000 0.0 0.0 -459.6700000 1340.330000
+         41        BPVAL CO2 H2O .1200000000 0.0 0.0 -459.6700000 1340.330000
+         42        BPVAL H2 CO2 -.1622000000 0.0 0.0 -459.6700000 1340.330000
+         43        BPVAL CO2 H2 -.1622000000 0.0 0.0 -459.6700000 1340.330000
+         44        BPVAL H2 CH4 .0156000000 0.0 0.0 -459.6700000 1340.330000
+         45        BPVAL CH4 H2 .0156000000 0.0 0.0 -459.6700000 1340.330000
+         46        BPVAL H2 N2 .1030000000 0.0 0.0 -459.6700000 1340.330000
+         47        BPVAL N2 H2 .1030000000 0.0 0.0 -459.6700000 1340.330000
+         48        BPVAL O2 N2 -.0119000000 0.0 0.0 -459.6700000 1340.330000
+         49        BPVAL N2 O2 -.0119000000 0.0 0.0 -459.6700000 1340.330000
+         50        BPVAL CO2 CH4 .0919000000 0.0 0.0 -459.6700000 1340.330000
+         51        BPVAL CH4 CO2 .0919000000 0.0 0.0 -459.6700000 1340.330000
+         52        BPVAL CO2 N2 -.0170000000 0.0 0.0 -459.6700000 1340.330000
+         53        BPVAL N2 CO2 -.0170000000 0.0 0.0 -459.6700000 1340.330000
+         54        BPVAL CH4 N2 .0311000000 0.0 0.0 -459.6700000 1340.330000
+         55        BPVAL N2 CH4 .0311000000 0.0 0.0 -459.6700000 1340.330000
+         56
+         57    PROP-DATA UNIQ-1
+         58        IN-UNITS ENG SHORT-LENGTH=in
+         59        PROP-LIST UNIQ
+         60        BPVAL H2O EG -.6018000000 217.4016600 0.0 0.0 86.72000000  &
+         61            386.0600000 0.0
+         62        BPVAL EG H2O .6018000000 -33.60852000 0.0 0.0 86.72000000  &
+         63            386.0600000 0.0
+         64
+         65    PROPERTY-REP PCES
+         66    ;
+         67    ;
+         68    ;
+         69    ;
+         70    ;
+ *** INPUT TRANSLATOR MESSAGES ***
+
+  *** THIS RUN USES THE PROPERTIES ENTERPRISE DATABASE ***
+      SQLLOCALDB.APESV140 : (DATAVERSION - 40.0.0.13)                         
+      SQLLOCALDB.APV140 : (DATAVERSION - 40.0.0.13)                           
+      SQLLOCALDB.FACTV140 : (DATAVERSION - 40.0.0.12)                         
+      SQLLOCALDB.NISTV140 : (DATAVERSION - 40.0.0.12)                         
+
+ PDF updated                                                                      TIME =      0.74
